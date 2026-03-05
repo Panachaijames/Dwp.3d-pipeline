@@ -1,0 +1,7 @@
+{
+  "name": "DWP.Intelligence 3D Pipeline",
+  "description": "A comprehensive 3D production pipeline dashboard integrating standard DMP software with advanced AI tools like Gemini 3 Pro and Veo for modeling, lighting, materials, rendering, and animation.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

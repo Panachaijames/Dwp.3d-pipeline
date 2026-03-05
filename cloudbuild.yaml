@@ -1,0 +1,52 @@
+steps:
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'build',
+      '--build-arg', 'NEXT_PUBLIC_SUPABASE_URL=$_NEXT_PUBLIC_SUPABASE_URL',
+      '--build-arg', 'NEXT_PUBLIC_SUPABASE_ANON_KEY=$_NEXT_PUBLIC_SUPABASE_ANON_KEY',
+      '--build-arg', 'GEMINI_CLIENT_ID=$_GEMINI_CLIENT_ID',
+      '--build-arg', 'GEMINI_API_KEY=$_GEMINI_API_KEY',
+      '--build-arg', 'CLAUDE_API_KEY=$_CLAUDE_API_KEY',
+      '--build-arg', 'APS_CLIENT_ID=$_APS_CLIENT_ID',
+      '--build-arg', 'APS_CLIENT_SECRET=$_APS_CLIENT_SECRET',
+      '--build-arg', 'APS_CALLBACK_URL=$_APS_CALLBACK_URL',
+      '-t', 'asia-southeast3-docker.pkg.dev/dwpaivibecode/pipeline-repo/pipeline-app:$BUILD_ID',
+      '-t', 'asia-southeast3-docker.pkg.dev/dwpaivibecode/pipeline-repo/pipeline-app:latest',
+      '.'
+    ]
+
+  # Push the container image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'asia-southeast3-docker.pkg.dev/dwpaivibecode/pipeline-repo/pipeline-app:latest']
+  
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+    - 'run'
+    - 'deploy'
+    - 'dwp-pipeline-v1'
+    - '--image'
+    - 'asia-southeast3-docker.pkg.dev/dwpaivibecode/pipeline-repo/pipeline-app:latest'
+    - '--region'
+    - 'asia-southeast3'
+    - '--platform'
+    - 'managed'
+    - '--allow-unauthenticated'
+    - '--set-env-vars'
+    - 'GEMINI_CLIENT_ID=$_GEMINI_CLIENT_ID,GEMINI_API_KEY=$_GEMINI_API_KEY,CLAUDE_API_KEY=$_CLAUDE_API_KEY,NEXT_PUBLIC_SUPABASE_URL=$_NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY=$_NEXT_PUBLIC_SUPABASE_ANON_KEY,GOOGLE_CLOUD_PROJECT=dwpaivibecode,GOOGLE_CLOUD_LOCATION=asia-southeast3,APS_CLIENT_ID=$_APS_CLIENT_ID,APS_CLIENT_SECRET=$_APS_CLIENT_SECRET,APS_CALLBACK_URL=$_APS_CALLBACK_URL'
+
+images:
+  - 'asia-southeast3-docker.pkg.dev/dwpaivibecode/pipeline-repo/pipeline-app:latest'
+
+substitutions:
+    _NEXT_PUBLIC_SUPABASE_URL: '' 
+    _NEXT_PUBLIC_SUPABASE_ANON_KEY: ''
+    _GEMINI_CLIENT_ID: ''
+    _GEMINI_API_KEY: ''
+    _APS_CLIENT_ID: ''
+    _APS_CLIENT_SECRET: ''
+    _APS_CALLBACK_URL: ''
+    _CLAUDE_API_KEY: ''
+
