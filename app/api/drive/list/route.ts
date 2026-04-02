@@ -24,8 +24,10 @@ export async function GET(req: NextRequest) {
         // Fetch files inside the given folder
         const response = await drive.files.list({
             q: `'${folderId}' in parents and trashed = false`,
-            fields: 'files(id, name, mimeType, webViewLink, iconLink)',
-            orderBy: 'name'
+            fields: 'files(id, name, mimeType, webViewLink, webContentLink, iconLink, thumbnailLink, modifiedTime)',
+            orderBy: 'name',
+            includeItemsFromAllDrives: true,
+            supportsAllDrives: true,
         });
 
         return NextResponse.json({
@@ -35,6 +37,11 @@ export async function GET(req: NextRequest) {
 
     } catch (error: any) {
         console.error('Drive list error:', error);
-        return NextResponse.json({ error: error.message || 'Error listing Drive files' }, { status: 500 });
+        const status = error.code || error.status || 500;
+        const isAuthError = status === 401 || (error.message && error.message.includes('authentication credentials'));
+        return NextResponse.json(
+            { error: error.message || 'Error listing Drive files' }, 
+            { status: isAuthError ? 401 : status }
+        );
     }
 }

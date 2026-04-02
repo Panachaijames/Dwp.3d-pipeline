@@ -34,6 +34,100 @@ description: >
 - **Outsource Renderer Directory** — Contact directory for external 3D visualisers and Revit support contractors.
 - **Submission Portal** — File upload portal with Google Drive integration for linking project assets.
 
+## Architecture & Conventions
+
+### App Structure
+Single-page SPA architecture with two routes:
+- `/` — Auth gate → `VizWorkflowApp` (leader/member), `OutsourcePortal` (outsource role), or "Access Pending" (no role)
+- `/book3d` — Standalone 3D viewer (embedded view)
+
+All other routes are API endpoints under `app/api/`.
+
+### Component Organisation
+```
+components/
+├── core/           Providers (GoogleOAuth + Auth)
+├── auth/           LoginPage (email + Google OAuth)
+├── features/
+│   ├── VizWorkflow/   Main tabbed workspace (14 tab components)
+│   ├── PdfLibrary/    PDF document management
+│   ├── StyleLens/     Image/text style analysis
+│   ├── WhiteModelDecoder/  BIM material projection
+│   ├── DriveUploader.tsx   Google Drive upload
+│   └── ResourceViewer.tsx  Resource browser
+├── portals/        Outsource, Submission, Library, Settings, Request
+├── dashboard/      Overview dashboard + tools grid + workflow progress
+├── viewers/        APSViewer, ModelViewer, Gallery, FileBrowser
+└── ui/             shadcn-style primitives (Button, Tabs, Skeleton, Spinner)
+```
+
+### Styling
+- **CSS custom properties** defined in `vizworkflow.css` (`.viz-light` / `.viz-dark` token sets)
+- **Tailwind CSS** loaded via CDN `<script>` tag in `app/layout.tsx` (not PostCSS — `@apply` does not work)
+- VizWorkflow components use CSS vars (`var(--bg)`, `var(--tx)`, `var(--or)`, etc.)
+- Portal/auth components use Tailwind utility classes with `dark:` prefix
+
+### State Management
+- **VizWorkflowApp** — React `useState` as primary orchestrator for projects, logs, tabs, modals
+- **Zustand** — `store/usePdfLibraryStore.ts` for PDF library state
+- **AuthContext** — User session, tokens, Google OAuth, Supabase auth, SSO
+- **ThemeContext** — Dark/light toggle, persisted in localStorage
+- **localStorage** — `dwp_user`, `dwp_access_token`, `dwp_token_expiry`
+
+### Database (Supabase)
+Tables: `viz_projects`, `viz_logs`, `threed_user_roles`, `dwp_refresh_tokens`, `prompt_library`, `project_prompts`, `pdf_sections`, `pdf_documents`, `project_all`, `threed_projects`, `threed_outsource_assignments`, `project_requests`
+
+### Key Patterns
+- **Dynamic imports**: Use `next/dynamic` with `{ ssr: false }` for heavy client components (Three.js, APS Viewer)
+- **Supabase writes**: Optimistic local state update first, then `upsert()` to Supabase
+- **ID generation**: `Math.random().toString(36).substr(2, 9)` via `uid()` in `constants.ts`
+- **Tab components**: Statically imported, conditionally rendered with `{tab === "key" && <Component />}`
+
+## Common Development Tasks
+
+### Adding a New VizWorkflow Tab
+1. Create component in `components/features/VizWorkflow/NewTab.tsx`
+2. Import it in `VizWorkflowApp.tsx`
+3. Add entry to `NAV_ITEMS`, `LIB_ITEMS`, or `TOOL_ITEMS_BASE` array
+4. Add conditional render in the tab content section: `{tab === "newtab" && <NewTab />}`
+
+### Adding a New API Route
+Create `app/api/<name>/route.ts` exporting `GET`/`POST` functions. Follow the pattern in `app/api/gemini/route.ts`.
+
+### Adding a New Role
+1. Update `UserRole` type in `contexts/AuthContext.tsx`
+2. Add role check in `app/page.tsx` `MainLayout`
+3. Update `threed_user_roles` Supabase table
+
+### Adding a New Portal
+1. Create component in `components/portals/NewPortal.tsx`
+2. Add to nav items and tab rendering in `VizWorkflowApp.tsx`
+
+## CSS Class Reference
+
+| Class | Purpose |
+|---|---|
+| `vw-root` | Root flex container (100vh) |
+| `vw-rail` / `.open` / `.closed` | Sidebar (220px open / 52px closed) |
+| `vw-mn` | Main content area |
+| `vw-bar` | Top bar |
+| `vw-fg`, `vw-fgi`, `vw-fi`, `vw-fs`, `vw-ft` | Form group, item, input, select, textarea |
+| `vw-cd`, `vw-tcard` | Card, tool card |
+| `vw-btn`, `vw-btn-p`, `vw-btn-g`, `vw-btn-d`, `vw-btn-sm` | Button variants (primary/ghost/danger/small) |
+| `vw-ov`, `vw-mdl` | Modal overlay + dialog |
+| `vw-empty`, `.ei`, `.et`, `.es` | Empty state container + icon/title/subtitle |
+| `vw-notice` | Toast notification (fixed, top-center, auto-dismiss 3s) |
+| `vw-render-msg`, `.user`, `.ai` | AI conversation message with role variants |
+
+## Gotchas
+
+- **Tailwind CDN**: Loaded via `<script>` tag, not PostCSS. `@apply` does not work. Classes are runtime-only.
+- **Dual dark class**: Both `.viz-dark` and `.dark` are toggled on `<html>`. ThemeContext toggles both.
+- **Phase locking**: `isLocked` is hardcoded to `false` (line 101 of VizWorkflowApp.tsx). Phase locking is not enforced.
+- **Force-dynamic**: `app/page.tsx` exports `force-dynamic` — the main page is never statically generated.
+- **Two font families**: DM Sans (VizWorkflow via vizworkflow.css) and Inter (globals.css / Tailwind config). Both coexist.
+- **Nav items**: Use `<div onClick>` instead of `<button>` — no keyboard navigation or ARIA attributes.
+
 ## AI Capabilities
 
 | Feature | Model / Service | Description |
@@ -217,26 +311,45 @@ gcloud builds submit --config=cloudbuild.yaml \
 | `app/api/claude/` | Claude API route |
 | `app/api/video-gen/` | Video generation API route |
 | `app/api/aps/` | Autodesk Platform Services API routes (9 endpoints) |
-| `components/VizWorkflow/VizWorkflowApp.tsx` | Main workspace orchestrator |
-| `components/VizWorkflow/PromptGenWorkspace.tsx` | AI prompt engineering workspace |
-| `components/VizWorkflow/RenderWorkspace.tsx` | In-app dwp.render workspace |
-| `components/VizWorkflow/ModelsTab.tsx` | 3D model library with APS upload |
-| `components/VizWorkflow/Book3DTab.tsx` | Embedded Three.js 3D viewer |
-| `components/VizWorkflow/WorkspaceTab.tsx` | Project dashboard |
-| `components/VizWorkflow/constants.ts` | Phases, tools, gates, presets, types |
-| `components/GeminiPanel.tsx` | AI chat/image/video panel |
-| `components/StyleLens/` | Style analysis components (4 files) |
-| `components/WhiteModelDecoder/` | Material projection components (2 files) |
-| `components/RequestPortal.tsx` | Work request submission form |
-| `components/LibraryPortal.tsx` | Digital archive / asset library |
-| `components/Dashboard.tsx` | Pipeline overview dashboard |
-| `services/geminiService.ts` | All Gemini AI functions (702 lines) |
+| `components/features/VizWorkflow/VizWorkflowApp.tsx` | Main workspace orchestrator |
+| `components/features/VizWorkflow/PromptGenWorkspace.tsx` | AI prompt engineering workspace |
+| `components/features/VizWorkflow/RenderWorkspace.tsx` | In-app dwp.render workspace |
+| `components/features/VizWorkflow/ModelsTab.tsx` | 3D model library with APS upload |
+| `components/features/VizWorkflow/Book3DTab.tsx` | Embedded Three.js 3D viewer |
+| `components/features/VizWorkflow/WorkspaceTab.tsx` | Project dashboard |
+| `components/features/VizWorkflow/constants.ts` | Phases, tools, gates, presets, types |
+| `components/features/VizWorkflow/vizworkflow.css` | Theme tokens + all component CSS classes |
+| `components/features/GeminiPanel.tsx` | AI chat/image/video panel |
+| `components/features/PdfLibrary/` | PDF library components (PdfLibrary, PdfUploader, PdfSectionPicker, StorageGauge) |
+| `components/features/StyleLens/` | Style analysis components (4 files) |
+| `components/features/WhiteModelDecoder/` | Material projection components (2 files) |
+| `components/features/DriveUploader.tsx` | Google Drive upload component |
+| `components/features/ResourceViewer.tsx` | Resource browser component |
+| `components/portals/OutsourcePortal.tsx` | Outsource renderer dashboard |
+| `components/portals/SubmissionPortal/` | Submission workflow + DrivePicker |
+| `components/portals/SettingsPortal.tsx` | User settings (leader-only) |
+| `components/portals/LibraryPortal.tsx` | Digital archive / asset library |
+| `components/portals/RequestPortal.tsx` | Work request submission form |
+| `components/dashboard/Dashboard.tsx` | Pipeline overview dashboard |
+| `components/viewers/APSViewer.tsx` | Autodesk APS 3D viewer embed |
+| `components/viewers/ModelViewer.tsx` | Generic 3D model viewer |
+| `components/ui/Skeleton.tsx` | Loading skeleton component |
+| `components/ui/Spinner.tsx` | Loading spinner component |
+| `services/geminiService.ts` | All Gemini AI functions |
 | `services/apsService.ts` | Autodesk Platform Services integration |
 | `services/googleDriveService.ts` | Google Drive file management |
 | `services/supabaseClient.ts` | Supabase client initialisation |
 | `services/emailService.ts` | Email notification service |
-| `contexts/AuthContext.tsx` | Google OAuth authentication context |
+| `contexts/AuthContext.tsx` | Google OAuth + Supabase auth + SSO context |
 | `contexts/ThemeContext.tsx` | Dark/light theme context |
+| `store/usePdfLibraryStore.ts` | Zustand store for PDF library |
+| `utils/sso.ts` | SSO URL builder + redirect helper |
+| `app/api/auth/` | OAuth code exchange + token refresh routes |
+| `app/api/drive/` | Google Drive routes (list, upload, create-project, assign-outsource) |
+| `app/api/imagen/` | Imagen 4 image generation route |
+| `app/api/gpt/` | GPT API route |
+| `app/api/project-prompts/` | Project-specific prompts route |
+| `app/api/prompt-library/` | Global prompt library route |
 | `types.ts` | Shared TypeScript type definitions |
 | `constants.tsx` | Pipeline phase data and tool definitions |
 | `Dockerfile` | Multi-stage Docker build |

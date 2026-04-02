@@ -4,12 +4,12 @@ import React from 'react';
 import nextDynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useAuth } from '../../contexts/AuthContext';
-import { LoginPage } from '../../components/LoginPage';
+import { LoginPage } from '../../components/auth/LoginPage';
 import { ThemeProvider, useTheme } from '../../contexts/ThemeContext';
-import '../../components/VizWorkflow/vizworkflow.css';
+import '../../components/features/VizWorkflow/vizworkflow.css';
 
 // Dynamic import for the tab to avoid SSR issues with some components
-const Book3DTab = nextDynamic(() => import('../../components/VizWorkflow/Book3DTab'), { ssr: false });
+const Book3DTab = nextDynamic(() => import('../../components/features/VizWorkflow/Book3DTab'), { ssr: false });
 
 function EmbedContent() {
     const { user, loading } = useAuth();

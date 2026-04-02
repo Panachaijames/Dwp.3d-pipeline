@@ -53,6 +53,7 @@ DROP POLICY IF EXISTS "Enable update for all" ON project_requests;
 CREATE POLICY "Enable read for all" ON project_requests FOR SELECT USING (true);
 CREATE POLICY "Enable insert for all" ON project_requests FOR INSERT WITH CHECK (true);
 CREATE POLICY "Enable update for all" ON project_requests FOR UPDATE USING (true);
+CREATE POLICY "Enable delete for all" ON project_requests FOR DELETE USING (true);
 `;
 
 async function run() {

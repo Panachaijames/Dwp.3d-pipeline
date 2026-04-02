@@ -49,13 +49,21 @@ export async function DELETE(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
     const supabase = getSupabase();
     const body = await request.json();
-    const { id, is_top10 } = body;
+    const { id, is_top10, name } = body;
 
     if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
 
+    const updatePayload: any = {};
+    if (is_top10 !== undefined) updatePayload.is_top10 = is_top10;
+    if (name !== undefined) updatePayload.name = name;
+
+    if (Object.keys(updatePayload).length === 0) {
+        return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
+    }
+
     const { data, error } = await supabase
         .from('prompt_library')
-        .update({ is_top10 })
+        .update(updatePayload)
         .eq('id', id)
         .select()
         .single();

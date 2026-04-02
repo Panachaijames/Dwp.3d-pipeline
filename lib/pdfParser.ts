@@ -1,12 +1,10 @@
-import * as pdfjsLib from 'pdfjs-dist';
-
-// Configure the worker explicitly to load from unpkg according to the exact version.
-// This is necessary for client-side PDF parsing in Next.js without complex webpack config.
-if (typeof window !== 'undefined') {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-}
-
 export async function parsePdfToText(base64DataUrl: string): Promise<string> {
+    const pdfjsLib = await import('pdfjs-dist');
+
+    if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+    }
+
     const base64Content = base64DataUrl.split(',')[1];
     if (!base64Content) {
         throw new Error('Invalid base64 data URL');

@@ -41,7 +41,8 @@ export async function POST(req: NextRequest) {
         const response = await drive.files.create({
             requestBody: fileMetadata,
             media: media,
-            fields: 'id, name, webViewLink'
+            fields: 'id, name, webViewLink',
+            supportsAllDrives: true,
         });
 
         return NextResponse.json({
@@ -53,6 +54,11 @@ export async function POST(req: NextRequest) {
 
     } catch (error: any) {
         console.error('Drive upload error:', error);
-        return NextResponse.json({ error: error.message || 'Error uploading to Drive' }, { status: 500 });
+        const status = error.code || error.status || 500;
+        const isAuthError = status === 401 || (error.message && error.message.includes('authentication credentials'));
+        return NextResponse.json(
+            { error: error.message || 'Error uploading to Drive' }, 
+            { status: isAuthError ? 401 : status }
+        );
     }
 }

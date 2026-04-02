@@ -25,6 +25,7 @@
     "jwt-decode": "^4.0.0",
     "lucide-react": "^0.563.0",
     "next": "^15.1.6",
+    "openai": "^6.27.0",
     "pdfjs-dist": "^5.4.624",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -39,6 +40,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "dotenv": "^17.2.4",
+    "pptxgenjs": "^4.0.1",
     "shadcn": "^3.8.3",
     "typescript": "~5.8.2"
   },

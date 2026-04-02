@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
             return await drive.permissions.create({
                 fileId: fileId,
                 sendNotificationEmail: false,
+                supportsAllDrives: true,
                 requestBody: {
                     type: 'user',
                     role: role,

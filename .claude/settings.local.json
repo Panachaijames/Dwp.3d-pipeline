@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(find /tmp -name screenshot* -o -name *.jpeg -o -name *.jpg)",
+      "Bash(netstat -ano)",
+      "Bash(grep :3000.*LISTEN)",
+      "Bash(npm --version)",
+      "Bash(node scripts/generate-ux-presentation.js)",
+      "Bash(node -e \"const pptx = new \\(require\\(''pptxgenjs''\\)\\)\\(\\); console.log\\(Object.keys\\(pptx.shapes\\).join\\('', ''\\)\\)\")",
+      "Bash(taskkill //PID 20800 //F)"
+    ]
+  }
+}

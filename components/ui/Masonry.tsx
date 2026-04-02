@@ -242,8 +242,8 @@ const Masonry: React.FC<MasonryProps> = ({
                         style={{ backgroundImage: `url(${item.img})`, backgroundColor: '#f4f4f5' }}
                     >
                         {/* Title Overlay */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
-                            <span className="text-white text-sm font-medium truncate">{item.title}</span>
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-3 pointer-events-none">
+                            <span className="text-white text-sm font-medium truncate drop-shadow-md">{item.title}</span>
                         </div>
 
                         {colorShiftOnHover && (

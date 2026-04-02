@@ -1,11 +1,11 @@
 import React from 'react';
 import type { Metadata } from 'next';
 import './globals.css';
-import { Providers } from '../components/Providers';
+import { Providers } from '../components/core/Providers';
 
 export const metadata: Metadata = {
-  title: 'dwp.visualization',
-  description: 'Real-time overview of the production pipeline and resources.',
+  title: 'dwp.3D Pipeline',
+  description: 'Official DWP 3D Pipeline workspace for internal project delivery and coordination.',
 };
 
 export default function RootLayout({
@@ -16,7 +16,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <link rel="icon" type="image/svg+xml" href="https://upload.wikimedia.org/wikipedia/commons/2/2f/Google_2015_logo.svg" />
+        <link rel="icon" type="image/svg+xml" href="/dwp-favicon.svg" />
         {/* Using CDN as per original index.html */}
         <script src="https://cdn.tailwindcss.com"></script>
         <script dangerouslySetInnerHTML={{

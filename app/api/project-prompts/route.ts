@@ -54,3 +54,22 @@ export async function DELETE(request: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ success: true });
 }
+
+export async function PATCH(request: NextRequest) {
+    const supabase = getSupabase();
+    const body = await request.json();
+    const { id, name } = body;
+
+    if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
+    if (!name) return NextResponse.json({ error: 'name is required' }, { status: 400 });
+
+    const { data, error } = await supabase
+        .from('project_prompts')
+        .update({ name })
+        .eq('id', id)
+        .select()
+        .single();
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ entry: data });
+}

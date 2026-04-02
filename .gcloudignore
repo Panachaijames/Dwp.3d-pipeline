@@ -1,0 +1,14 @@
+# Exclude local build output and workspace-only files from Cloud Build source uploads.
+.git
+.gitignore
+.next
+.claude
+.gcloud-tmp
+node_modules
+coverage
+dist
+build_output.txt
+tsconfig.tsbuildinfo
+*.log
+*.local
+.env.local

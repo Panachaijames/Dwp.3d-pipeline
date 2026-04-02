@@ -60,6 +60,8 @@ export interface ProjectRequest {
   providedFiles?: string[];
   driveFolderId?: string;
   driveFolderName?: string;
+  resourceFolderId?: string;
+  resourceFolderName?: string;
 
   // Workflow Selection
   inputType?: InputType;
@@ -76,6 +78,9 @@ export interface ProjectRequest {
   priority: 'Low' | 'Medium' | 'High';
   submittedBy: string;
   timestamp: string;
+  
+  // Schedule / Distribution
+  assigned_to?: string;
 }
 
 export interface TeamMember {
