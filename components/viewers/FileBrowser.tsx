@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Folder, FileText, Download, ExternalLink, Box, LayoutGrid, List, ChevronRight, X, Layers } from 'lucide-react';
+import { Loader2, Folder, FileText, Download, ExternalLink, LayoutGrid, List, ChevronRight, X, Layers, Search } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { googleDriveService, DriveFile } from '../../services/googleDriveService';
 import { useAuth } from '../../contexts/AuthContext';
-import ModelViewer from './ModelViewer';
 import Masonry, { MasonryItem } from '../ui/Masonry';
 import BounceCards from '../ui/BounceCards';
 
@@ -19,8 +18,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ initialFolderId, acces
     const [browserFiles, setBrowserFiles] = useState<DriveFile[]>([]);
     const [loadingBrowser, setLoadingBrowser] = useState(false);
     const [viewMode, setViewMode] = useState<'list' | 'masonry' | 'bounce'>('masonry');
-    const [viewingFile, setViewingFile] = useState<DriveFile | null>(null);
-    const [modelUrl, setModelUrl] = useState<string | null>(null);
+    const [searchTerm, setSearchTerm] = useState('');
 
     // Load Browser Files
     useEffect(() => {
@@ -81,42 +79,8 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ initialFolderId, acces
 
 
     const is3DModel = (file: DriveFile) => {
-        const isModel = /\.(glb|gltf|fbx|obj|max)$/i.test(file.name) ||
-            file.mimeType.includes('model') ||
-            file.mimeType.includes('octet-stream'); // Fallback for some binary types
-        return isModel;
-    };
-
-    const handleView3D = async (file: DriveFile) => {
-        if (!accessToken) return;
-
-        let targetFile = file;
-
-        // Smart Check: If .max file, look for a companion .glb/.gltf/.fbx/.obj
-        if (/\.max$/i.test(file.name)) {
-            const baseName = file.name.substring(0, file.name.lastIndexOf('.'));
-            const companion = browserFiles.find(f =>
-                f.name.startsWith(baseName) &&
-                /\.(glb|gltf|fbx|obj)$/i.test(f.name)
-            );
-
-            if (companion) {
-                console.log(`Auto-switching .max view to companion: ${companion.name}`);
-                targetFile = companion;
-            }
-        }
-
-        setViewingFile(targetFile);
-        setModelUrl(null);
-        try {
-            const blob = await googleDriveService.downloadFile(accessToken, targetFile.id);
-            const url = URL.createObjectURL(blob);
-            setModelUrl(url);
-        } catch (err) {
-            console.error("Failed to load model", err);
-            alert("Failed to load 3D model.");
-            setViewingFile(null);
-        }
+        return /\.(glb|gltf|fbx|obj|max|3ds|rvt|dwg|zip|ifc|nwd|nwc)$/i.test(file.name) ||
+            file.mimeType.includes('model');
     };
 
     // Build a set of companion image IDs — images whose base name matches a 3D model file.
@@ -124,7 +88,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ initialFolderId, acces
     const companionImageIds = useMemo<Set<string>>(() => {
         const ids = new Set<string>();
         const modelFiles = browserFiles.filter(f =>
-            /\.(glb|gltf|fbx|obj|max|3ds|dwg|rvt)$/i.test(f.name)
+            /\.(glb|gltf|fbx|obj|max|3ds|dwg|rvt|zip|ifc|nwd|nwc)$/i.test(f.name)
         );
         for (const model of modelFiles) {
             const baseName = model.name.substring(0, model.name.lastIndexOf('.'));
@@ -141,13 +105,21 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ initialFolderId, acces
         return ids;
     }, [browserFiles]);
 
+    // Apply search + companion-image filter in one pass.
+    // Used by list view, folder grid, masonry, bounce, and the empty-state check.
+    const visibleFiles = useMemo(() => {
+        const q = searchTerm.trim().toLowerCase();
+        return browserFiles.filter(f => {
+            if (companionImageIds.has(f.id)) return false;
+            if (!q) return true;
+            return f.name.toLowerCase().includes(q);
+        });
+    }, [browserFiles, companionImageIds, searchTerm]);
+
     // Memoized Masonry Items — excludes folders and companion images
     const masonryItems = useMemo<MasonryItem[]>(() => {
-        return browserFiles
-            .filter(f =>
-                f.mimeType !== 'application/vnd.google-apps.folder' &&
-                !companionImageIds.has(f.id)
-            )
+        return visibleFiles
+            .filter(f => f.mimeType !== 'application/vnd.google-apps.folder')
             .map(file => {
                 const img = getThumbnailForFile(file) || 'https://placehold.co/400x300?text=No+Preview';
                 // Generate a pseudo-random height based on name length for visual variety if real size unknown
@@ -160,36 +132,68 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ initialFolderId, acces
                     title: file.name
                 };
             });
-    }, [browserFiles, companionImageIds]);
+    }, [visibleFiles]);
 
-    // Memoized Bounce Images — excludes companion images
+    // Memoized Bounce Images — excludes companion images and respects search
     const bounceImages = useMemo<string[]>(() => {
-        return browserFiles
+        return visibleFiles
             .filter(f =>
                 /\.(jpg|jpeg|png|webp)$/i.test(f.name) &&
-                f.thumbnailLink &&
-                !companionImageIds.has(f.id)
+                f.thumbnailLink
             )
             .map(f => f.thumbnailLink!.replace('=s220', '=s800'));
-    }, [browserFiles, companionImageIds]);
+    }, [visibleFiles]);
 
     return (
         <div className="bg-white dark:bg-zinc-950/50 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-xl shadow-zinc-200/50 dark:shadow-none min-h-[400px] flex flex-col">
             {/* Browser Header / Breadcrumbs */}
-            <div className="flex items-center justify-between mb-6 border-b border-zinc-100 dark:border-zinc-800 pb-2">
-                <div className="flex items-center gap-2 overflow-x-auto">
+            <div className="flex items-center gap-3 mb-6 border-b border-zinc-100 dark:border-zinc-800 pb-3">
+                <div className="flex items-center gap-1 overflow-x-auto min-w-0">
                     {browserPath.map((item, index) => (
                         <React.Fragment key={item.id}>
-                            {index > 0 && <ChevronRight size={16} className="text-zinc-400" />}
+                            {index > 0 && <ChevronRight size={16} className="text-zinc-400 shrink-0" />}
                             <button
                                 onClick={() => handleNavigate(item.id, item.name)}
-                                className={`text-sm px-2 py-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors whitespace-nowrap ${index === browserPath.length - 1 ? 'font-bold text-zinc-900 dark:text-white' : 'text-zinc-500'}`}
+                                className={`text-sm px-2 py-0.5 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors whitespace-nowrap ${index === browserPath.length - 1 ? 'font-bold text-zinc-900 dark:text-white' : 'text-zinc-500'}`}
                             >
                                 {item.name}
                             </button>
                         </React.Fragment>
                     ))}
                 </div>
+
+                {/* Search */}
+                <div className="relative flex-1 min-w-[140px] max-w-sm ml-auto">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                    <input
+                        type="text"
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                        placeholder="Search this folder…"
+                        className="w-full pl-8 pr-8 py-1.5 text-sm bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 text-zinc-900 dark:text-white placeholder-zinc-400"
+                    />
+                    {searchTerm && (
+                        <button
+                            onClick={() => setSearchTerm('')}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                            title="Clear search"
+                        >
+                            <X size={14} />
+                        </button>
+                    )}
+                </div>
+
+                <a
+                    href={`https://drive.google.com/drive/folders/${browserPath[browserPath.length - 1].id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-300 transition-colors"
+                    title="Open this folder in Google Drive"
+                >
+                    <ExternalLink size={13} />
+                    <span className="hidden sm:inline">Open in Drive</span>
+                </a>
+
                 <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-900 p-1 rounded-lg shrink-0">
                     <button
                         onClick={() => setViewMode('list')}
@@ -222,10 +226,20 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ initialFolderId, acces
                         <Loader2 className="animate-spin text-purple-500" size={32} />
                         <p>Loading files...</p>
                     </div>
-                ) : browserFiles.length === 0 ? (
-                    <div className="h-64 flex flex-col items-center justify-center text-zinc-400">
-                        <Folder className="w-12 h-12 mb-4 opacity-20" />
-                        <p>This folder is empty.</p>
+                ) : visibleFiles.length === 0 ? (
+                    <div className="h-64 flex flex-col items-center justify-center text-zinc-400 gap-2">
+                        {searchTerm ? (
+                            <>
+                                <Search className="w-10 h-10 opacity-20" />
+                                <p className="text-sm">No files match &ldquo;<span className="font-medium">{searchTerm}</span>&rdquo;</p>
+                                <button onClick={() => setSearchTerm('')} className="text-xs text-purple-500 hover:underline">Clear search</button>
+                            </>
+                        ) : (
+                            <>
+                                <Folder className="w-12 h-12 opacity-20" />
+                                <p className="text-sm">This folder is empty.</p>
+                            </>
+                        )}
                     </div>
                 ) : (
                     <>
@@ -240,7 +254,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ initialFolderId, acces
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {browserFiles.filter(f => !companionImageIds.has(f.id)).map((file) => (
+                                    {visibleFiles.map((file) => (
                                         <TableRow key={file.id} className="group">
                                             <TableCell>
                                                 <div className="flex items-center gap-3">
@@ -272,7 +286,10 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ initialFolderId, acces
                                                 {file.mimeType.split('.').pop()?.split('/').pop()}
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <div className="flex justify-end gap-2 items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    {is3DModel(file) && (
+                                                        <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: 'rgba(139,92,246,0.1)', color: '#8b5cf6', border: '1px solid rgba(139,92,246,0.2)', whiteSpace: 'nowrap' }}>3D · No preview</span>
+                                                    )}
                                                     {file.webContentLink && (
                                                         <Button
                                                             variant="ghost"
@@ -283,18 +300,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ initialFolderId, acces
                                                             <Download size={16} />
                                                         </Button>
                                                     )}
-                                                    {is3DModel(file) && (
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            onClick={(e) => { e.stopPropagation(); handleView3D(file); }}
-                                                            title="View 3D"
-                                                        >
-                                                            <Box size={16} />
-                                                        </Button>
-                                                    )}
                                                     {file.webViewLink && (
-
                                                         <Button
                                                             variant="ghost"
                                                             size="icon"
@@ -314,7 +320,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ initialFolderId, acces
                             <>
                                 {/* Folders Grid (for non-list modes) */}
                                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
-                                    {browserFiles.filter(f => f.mimeType === 'application/vnd.google-apps.folder').map(folder => (
+                                    {visibleFiles.filter(f => f.mimeType === 'application/vnd.google-apps.folder').map(folder => (
                                         <button
                                             key={folder.id}
                                             onClick={() => handleNavigate(folder.id, folder.name)}
@@ -330,13 +336,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ initialFolderId, acces
                                     <Masonry
                                         items={masonryItems}
                                         onItemClick={(item) => {
-                                            const file = browserFiles.find(f => f.id === item.id);
-                                            console.log("Clicked item:", item, "File found:", file, "Is 3D?", file ? is3DModel(file) : false);
-                                            if (file && is3DModel(file)) {
-                                                handleView3D(file);
-                                            } else {
-                                                window.open(item.url, '_blank');
-                                            }
+                                            window.open(item.url, '_blank');
                                         }}
                                     />
                                 )}
@@ -361,53 +361,6 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ initialFolderId, acces
                 )}
             </div>
 
-            {/* 3D Model Modal */}
-            {viewingFile && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-in fade-in">
-                    <div className="w-full max-w-6xl h-[85vh] bg-zinc-900 rounded-3xl overflow-hidden shadow-2xl flex flex-col relative border border-zinc-800">
-                        <div className="absolute top-4 right-4 z-50 flex gap-2">
-                            <a
-                                href={viewingFile.webContentLink}
-                                className="p-2 bg-black/50 hover:bg-black/80 rounded-full text-white transition-colors backdrop-blur-md"
-                                title="Download Model"
-                            >
-                                <Download size={20} />
-                            </a>
-                            <button
-                                onClick={() => { setViewingFile(null); setModelUrl(null); }}
-                                className="p-2 bg-black/50 hover:bg-black/80 rounded-full text-white transition-colors backdrop-blur-md"
-                            >
-                                <X size={20} />
-                            </button>
-                        </div>
-
-                        <div className="flex-1 relative bg-gradient-to-b from-zinc-800 to-zinc-950">
-                            {!modelUrl ? (
-                                <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-400 gap-4">
-                                    <Loader2 className="animate-spin text-purple-500" size={48} />
-                                    <p className="font-medium">Loading 3D Model...</p>
-                                    <p className="text-sm text-zinc-500 uppercase tracking-wider">{viewingFile.name}</p>
-                                </div>
-                            ) : (
-                                <ModelViewer
-                                    url={modelUrl}
-                                    fileName={viewingFile.name}
-                                    width="100%"
-                                    height="100%"
-                                    environmentPreset="city"
-                                    autoRotate={true}
-                                />
-                            )}
-                        </div>
-                        <div className="p-4 bg-black/40 backdrop-blur border-t border-zinc-800 flex justify-between items-center">
-                            <div>
-                                <h3 className="font-bold text-white text-lg">{viewingFile.name}</h3>
-                                <p className="text-zinc-400 text-sm">{(parseInt(viewingFile.size!) / 1024 / 1024).toFixed(2)} MB • {viewingFile.mimeType.split('.').pop()?.toUpperCase()}</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 };

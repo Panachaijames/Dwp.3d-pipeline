@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-        const { prompt, systemPrompt } = await request.json();
+        const { prompt, systemPrompt, imageData } = await request.json();
 
         if (!prompt) {
             return NextResponse.json({ error: 'prompt is required' }, { status: 400 });
@@ -20,8 +20,18 @@ export async function POST(request: NextRequest) {
 
         const parts: any[] = [];
 
-        // The frontend already extracts text from PDFs and appends it to `prompt` payload.
-        // We do not download the raw PDFs here to avoid Vercel 504 execution timeouts.
+        // If the frontend sent an image (base64 data URL), include it as an inlineData part
+        if (imageData && typeof imageData === 'string' && imageData.startsWith('data:')) {
+            const match = imageData.match(/^data:(image\/\w+);base64,(.+)$/);
+            if (match) {
+                parts.push({
+                    inlineData: {
+                        mimeType: match[1],
+                        data: match[2],
+                    }
+                });
+            }
+        }
 
         // Add the user text prompt at the end
         parts.push({ text: prompt });

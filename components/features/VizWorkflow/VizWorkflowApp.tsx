@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { usePathname } from 'next/navigation';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { useAuth } from '../../../contexts/AuthContext';
 import {
@@ -13,23 +14,33 @@ import './vizworkflow.css';
 import { supabase } from '@/services/supabaseClient';
 import { buildSSOUrl, openWithSSO } from '@/utils/sso';
 
-import WorkspaceTab from './WorkspaceTab';
-import PromptLogTab from './PromptLogTab';
-import PhaseGatesTab from './PhaseGatesTab';
-import PromptLibraryTab from './PromptLibraryTab';
-import ModelsTab from './ModelsTab';
-import RenderTab from './RenderTab';
-import NamingTab from './NamingTab';
-import Book3DTab from './Book3DTab';
-import Portal3DTab from './Portal3DTab';
-import ReferenceTab from './ReferenceTab';
-import ScheduleTab from './ScheduleTab';
-import RenderWorkspace from './RenderWorkspace';
-import PromptGenWorkspace from './PromptGenWorkspace';
+import nextDynamic from 'next/dynamic';
+
+const WorkspaceTab = nextDynamic(() => import('./WorkspaceTab'), { ssr: false });
+const PromptLogTab = nextDynamic(() => import('./PromptLogTab'), { ssr: false });
+const PhaseGatesTab = nextDynamic(() => import('./PhaseGatesTab'), { ssr: false });
+const PromptLibraryTab = nextDynamic(() => import('./PromptLibraryTab'), { ssr: false });
+const ModelsTab = nextDynamic(() => import('./ModelsTab'), { 
+    ssr: false, 
+    loading: () => <div className="vw-pnl"><div className="vw-empty"><div className="ei">△</div><div className="et">Loading 3D Engine...</div></div></div> 
+});
+const RenderTab = nextDynamic(() => import('./RenderTab'), { ssr: false });
+const NamingTab = nextDynamic(() => import('./NamingTab'), { ssr: false });
+const Book3DTab = nextDynamic(() => import('./Book3DTab'), { ssr: false });
+const Portal3DTab = nextDynamic(() => import('./Portal3DTab'), { ssr: false });
+const ReferenceTab = nextDynamic(() => import('./ReferenceTab'), { ssr: false });
+const ScheduleTab = nextDynamic(() => import('./ScheduleTab'), { ssr: false });
+const RenderWorkspace = nextDynamic(() => import('./RenderWorkspace'), { ssr: false });
+const PromptGenWorkspace = nextDynamic(() => import('./PromptGenWorkspace'), { ssr: false });
+
+const PdfLibrary = nextDynamic(() => import('../PdfLibrary/PdfLibrary').then(mod => mod.PdfLibrary), { 
+    ssr: false,
+    loading: () => <div className="vw-pnl"><div className="vw-empty"><div className="ei">▤</div><div className="et">Loading PDF Engine...</div></div></div> 
+});
+const SettingsPortal = nextDynamic(() => import('../../portals/SettingsPortal').then(mod => mod.SettingsPortal), { ssr: false });
+
 import ProjectModal from './ProjectModal';
 import LogModal from './LogModal';
-import { PdfLibrary } from '../PdfLibrary/PdfLibrary';
-import { SettingsPortal } from '../../portals/SettingsPortal';
 import { AlertTriangle, HardDrive, MessageSquare } from 'lucide-react';
 
 const EMPTY_GATES: VizProject['gates'] = { 1: null, 2: null, 3: null, 4: null };
@@ -65,6 +76,7 @@ const normalizeRequestedProjectRow = (row: any): VizProject | null => {
     if (!projectId && !name && !studio) return null;
 
     const requestKey = slugify(`${projectId}|${name}|${studio}`) || slugify(readText(row?.id) || today());
+    const requestRowId = readText(row?.id);
 
     return {
         id: `request:${requestKey}`,
@@ -76,6 +88,7 @@ const normalizeRequestedProjectRow = (row: any): VizProject | null => {
         gates: { ...EMPTY_GATES },
         created: readText(row?.created_at, row?.timestamp) || today(),
         requestKey,
+        requestRowId,
     };
 };
 
@@ -103,6 +116,11 @@ const matchesRequestedProject = (requestedProject: VizProject, vizProject: VizPr
 
 const sortProjects = (projects: VizProject[]) =>
     [...projects].sort((left, right) => {
+        const leftCreated = left.created || "";
+        const rightCreated = right.created || "";
+        if (leftCreated !== rightCreated) {
+            return rightCreated.localeCompare(leftCreated);
+        }
         const leftLabel = `${left.projectId} ${left.name}`.trim().toLowerCase();
         const rightLabel = `${right.projectId} ${right.name}`.trim().toLowerCase();
         return leftLabel.localeCompare(rightLabel);
@@ -120,15 +138,17 @@ const mergeProjects = (requestRows: any[] | null | undefined, vizRows: any[] | n
     const requestedProjects = sortProjects(Array.from(requestProjects.values()));
     const vizProjects = (vizRows || []).map(row => normalizeVizProjectRow(row));
     const mergedProjects: VizProject[] = [];
+    const consumedVizIds = new Set<string>();
 
     for (const requestedProject of requestedProjects) {
-        const matchingVizProject = vizProjects.find(vizProject => matchesRequestedProject(requestedProject, vizProject));
+        const matchingVizProject = vizProjects.find(vizProject => !consumedVizIds.has(vizProject.id) && matchesRequestedProject(requestedProject, vizProject));
 
         if (!matchingVizProject) {
             mergedProjects.push(requestedProject);
             continue;
         }
 
+        consumedVizIds.add(matchingVizProject.id);
         mergedProjects.push({
             ...requestedProject,
             ...matchingVizProject,
@@ -141,13 +161,30 @@ const mergeProjects = (requestRows: any[] | null | undefined, vizRows: any[] | n
             gates: normalizeGates(matchingVizProject.gates),
             created: matchingVizProject.created || requestedProject.created,
             requestKey: requestedProject.requestKey,
+            requestRowId: requestedProject.requestRowId,
         });
+    }
+
+    // Include user-created viz_projects that don't match any request row
+    for (const vizProject of vizProjects) {
+        if (!consumedVizIds.has(vizProject.id)) {
+            mergedProjects.push(vizProject);
+        }
     }
 
     return sortProjects(mergedProjects);
 };
 
-export default function VizWorkflowApp() {
+// Map tab keys to URL paths (only tabs that should have dedicated routes)
+const TAB_ROUTES: Record<string, string> = {
+    models: '/3dmodel',
+    book3d: '/book3d',
+};
+const PATH_TO_TAB: Record<string, string> = Object.fromEntries(
+    Object.entries(TAB_ROUTES).map(([tab, path]) => [path, tab])
+);
+
+export default function VizWorkflowApp({ initialTab }: { initialTab?: string } = {}) {
     const { theme, toggleTheme } = useTheme();
     const {
         user,
@@ -160,6 +197,14 @@ export default function VizWorkflowApp() {
         driveNeedsReconnect,
     } = useAuth();
     const dark = theme === 'dark';
+    const pathname = usePathname();
+
+    // Derive initial tab from URL path or prop
+    const getInitialTab = () => {
+        if (initialTab) return initialTab;
+        if (pathname && PATH_TO_TAB[pathname]) return PATH_TO_TAB[pathname];
+        return 'workspace';
+    };
 
     const [projects, setProjects] = useState<VizProject[]>([]);
     const [rawRequests, setRawRequests] = useState<any[]>([]);
@@ -168,11 +213,21 @@ export default function VizWorkflowApp() {
     const [rail, setRail] = useState(true);
     const [proj, setProj] = useState<VizProject | null>(null);
     const [activeTool, setActiveTool] = useState<VizTool | null>(null);
-    const [tab, setTab] = useState("workspace");
+    const [tab, setTab] = useState(getInitialTab);
+
+    // Sync tab → URL
+    const changeTab = useCallback((newTab: string) => {
+        setTab(newTab);
+        const targetPath = TAB_ROUTES[newTab] || '/';
+        if (typeof window !== 'undefined' && window.location.pathname !== targetPath) {
+            window.history.replaceState(null, '', targetPath);
+        }
+    }, []);
     const [viewPhase, setViewPhase] = useState<PhaseKey | null>(null);
     const [editProj, setEditProj] = useState<VizProject | null>(null);
     const [editLog, setEditLog] = useState<VizLog | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
+    const [projectSearch, setProjectSearch] = useState("");
 
     // Load from Supabase on mount
     useEffect(() => {
@@ -232,6 +287,9 @@ export default function VizWorkflowApp() {
         const channel = supabase
             .channel('vizworkflow_project_requests')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'project_requests' }, () => {
+                void loadData();
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'viz_projects' }, () => {
                 void loadData();
             })
             .subscribe();
@@ -331,26 +389,31 @@ export default function VizWorkflowApp() {
 
     const deleteProject = async (id: string) => {
         const currentProject = projects.find(project => project.id === id);
-        if (currentProject?.requestKey) {
-            setNotice("Book a 3D request projects can't be deleted here");
-            setTimeout(() => setNotice(null), 3000);
-            setEditProj(null);
-            return;
-        }
-
-        if (currentProject?.catalogKey) {
-            setNotice("Projects from project_all can't be deleted here");
-            setTimeout(() => setNotice(null), 3000);
-            setEditProj(null);
-            return;
-        }
+        const requestRowId = currentProject?.requestRowId;
 
         setProjects(prev => prev.filter(p => p.id !== id));
         if (proj?.id === id) setProj(null);
         setEditProj(null);
-        // Supabase DB migration was set up with ON DELETE CASCADE, 
-        // which will automatically wipe its viz_logs and pdf_sections
-        await supabase.from('viz_projects').delete().eq('id', id);
+
+        try {
+            const deletes = [
+                supabase.from('viz_projects').delete().eq('id', id)
+            ];
+
+            if (requestRowId) {
+                deletes.push(supabase.from('project_requests').delete().eq('id', requestRowId));
+            }
+
+            const results = await Promise.all(deletes);
+            const failedDelete = results.find(result => result.error);
+            if (failedDelete?.error) {
+                throw failedDelete.error;
+            }
+        } catch (err) {
+            console.error("Failed to delete project:", err);
+            setNotice("Failed to delete project. Please try again.");
+            setTimeout(() => setNotice(null), 3000);
+        }
     };
 
     const passGate = async (pid: string, gid: number, ok: boolean) => {
@@ -394,9 +457,9 @@ export default function VizWorkflowApp() {
     };
 
     const openTool = (tool: VizTool) => {
-        if (tool.id === "promptgen") { setActiveTool(tool); setTab("promptgen"); }
+        if (tool.id === "promptgen") { setActiveTool(tool); changeTab("promptgen"); }
         else if (tool.internal && tool.url) { openWithSSO(tool.url); setActiveTool(tool); }
-        else if (tool.internal) { setActiveTool(tool); setTab("render"); }
+        else if (tool.internal) { setActiveTool(tool); changeTab("render"); }
         else { setActiveTool(tool); }
     };
     const logFromTool = (tool: VizTool) => {
@@ -439,10 +502,16 @@ export default function VizWorkflowApp() {
 
     const renderNavSection = (items: { k: string; ic: string; lb: string }[]) =>
         items.map(n => (
-            <div key={n.k} className={`vw-ri ${tab === n.k ? "on" : ""}`} onClick={() => setTab(n.k)}>
+            <div key={n.k} className={`vw-ri ${tab === n.k ? "on" : ""}`} onClick={() => changeTab(n.k)}>
                 <span className="vw-ic">{n.ic}</span><span>{n.lb}</span>
             </div>
         ));
+
+    const filteredProjects = projects.filter(p => {
+        if (!projectSearch) return true;
+        const s = projectSearch.toLowerCase();
+        return (p.name || "").toLowerCase().includes(s) || (p.projectId || "").toLowerCase().includes(s);
+    });
 
     return (
         <div className={`vw-root ${dark ? 'viz-dark' : 'viz-light'}`}>
@@ -455,13 +524,39 @@ export default function VizWorkflowApp() {
                     <div className="vw-rsec">
                         {rail ? <>Projects <span style={{ cursor: "pointer", fontSize: 12, color: "var(--or)" }} onClick={e => { e.stopPropagation(); setEditProj(freshProject()); }}>+</span></> : ""}
                     </div>
-                    {projects.map(p => (
-                        <div key={p.id} className={`vw-rp ${proj?.id === p.id ? "on" : ""}`} onClick={() => setProj(p)}>
-                            <span className="vw-dot" style={{ background: phaseOf(p.phase)?.color }} />
-                            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{p.name || p.projectId || "Untitled"}</span>
+                    {rail && (
+                        <div style={{ padding: "0 8px 8px 8px" }}>
+                            <input 
+                                type="text" 
+                                placeholder="Search projects..." 
+                                value={projectSearch}
+                                onChange={e => setProjectSearch(e.target.value)}
+                                className="vw-fi"
+                                style={{ width: "100%", padding: "4px 8px", fontSize: "11px" }}
+                            />
                         </div>
-                    ))}
-                    {projects.length === 0 && rail && <div style={{ padding: "6px 8px", fontSize: 9, color: "var(--tx3)", textAlign: "center" }}>No projects</div>}
+                    )}
+                    <div style={{ maxHeight: "35vh", overflowY: "auto", display: "flex", flexDirection: "column" }}>
+                        {filteredProjects.map(p => (
+                                <div key={p.id} className={`vw-rp ${proj?.id === p.id ? "on" : ""}`} onClick={() => setProj(p)}>
+                                    <span className="vw-dot" style={{ background: phaseOf(p.phase)?.color }} />
+                                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{p.name || p.projectId || "Untitled"}</span>
+                                    {rail && (
+                                        <button
+                                            className="vw-rp-del"
+                                            title="Delete project"
+                                            onClick={e => {
+                                                e.stopPropagation();
+                                                if (confirm(`Delete "${p.name || p.projectId || 'Untitled'}"? All prompt logs and PDF data will be permanently deleted.`)) {
+                                                    void deleteProject(p.id);
+                                                }
+                                            }}
+                                        >×</button>
+                                    )}
+                                </div>
+                        ))}
+                        {filteredProjects.length === 0 && rail && <div style={{ padding: "6px 8px", fontSize: 9, color: "var(--tx3)", textAlign: "center" }}>No projects found</div>}
+                    </div>
                     <div className="vw-rsec">{rail ? "Navigation" : ""}</div>
                     {renderNavSection(NAV_ITEMS)}
                     <div className="vw-rsec">{rail ? "Library" : ""}</div>
@@ -487,7 +582,7 @@ export default function VizWorkflowApp() {
                                         color: activePhase === ph.key ? ph.color : "var(--tx3)",
                                         border: `1px solid ${activePhase === ph.key ? `${ph.color}30` : "var(--bdr)"}`,
                                         fontWeight: activePhase === ph.key ? 600 : 400,
-                                    }} onClick={() => { setViewPhase(ph.key); setTab("workspace"); }}>
+                                    }} onClick={() => { setViewPhase(ph.key); changeTab("workspace"); }}>
                                         {ph.label}
                                     </span>
                                 ))}
@@ -558,7 +653,7 @@ export default function VizWorkflowApp() {
                     ? <PromptGenWorkspace proj={proj} logs={logs} saveL={saveL} freshLog={freshLog} />
                     : <div className="vw-pnl"><div className="vw-empty" style={{ paddingTop: 80 }}><div className="ei">◇</div><div className="et">Select a project to use Prompt Gen</div><div className="es">Generate optimised prompts from briefs, images, or custom inputs.</div></div></div>
                 )}
-                {tab === "workspace" && <WorkspaceTab proj={proj} pLogs={pLogs} activePhase={activePhase} isLocked={isLocked} activeTool={activeTool} setActiveTool={setActiveTool} openTool={openTool} logFromTool={logFromTool} setEditProj={setEditProj} setEditLog={setEditLog} setTab={setTab} setViewPhase={setViewPhase} />}
+                {tab === "workspace" && <WorkspaceTab proj={proj} pLogs={pLogs} activePhase={activePhase} isLocked={isLocked} activeTool={activeTool} setActiveTool={setActiveTool} openTool={openTool} logFromTool={logFromTool} setEditProj={setEditProj} setEditLog={setEditLog} setTab={changeTab} setViewPhase={setViewPhase} />}
                 {tab === "logs" && <PromptLogTab proj={proj} pLogs={pLogs} setEditLog={setEditLog} freshLog={freshLog} />}
                 {tab === "gates" && <PhaseGatesTab proj={proj} projects={projects} passGate={passGate} setPhase={setPhase} />}
                 {tab === "library" && <PromptLibraryTab projId={proj?.id} />}

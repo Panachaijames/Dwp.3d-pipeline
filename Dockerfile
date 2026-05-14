@@ -3,6 +3,9 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_OPTIONS=--max-old-space-size=6144
+
 # Install dependencies based on the preferred package manager
 COPY package.json package-lock.json* ./
 RUN npm install

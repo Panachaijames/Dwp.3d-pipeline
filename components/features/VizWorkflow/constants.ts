@@ -58,7 +58,174 @@ export const RENDER_MODES = [
     { id: "prompt-refine", label: "Prompt Refinement", desc: "Optimise prompts for Midjourney, Krea, or other tools", phase: ["CON", "SCH", "DD"] as PhaseKey[] },
     { id: "material-suggest", label: "Material Analysis", desc: "Suggest materials and finishes from reference imagery", phase: ["SCH"] as PhaseKey[] },
     { id: "render-critique", label: "Render Critique", desc: "Review a render against the design brief and brand standards", phase: ["DD"] as PhaseKey[] },
+    { id: "dd-material-tag", label: "Material Code Tagger", desc: "Annotate a render with DD phase material codes", phase: ["DD"] as PhaseKey[] },
 ];
+
+export interface MaterialAnnotation {
+    id: string;
+    code: string;
+    x: number;
+    y: number;
+    note?: string;
+    variant?: 'flat';
+}
+
+export const DD_PHASE_MATERIAL_SCHEDULE = `METAL & STAINLESS
+MT01 : General metal (Mirror) caramel
+MT02 : General metal (Hairline) caramel
+MT03 : General metal (Mirror+magnet) caramel
+MT04 : Champagne Gold (Mirror) WIC
+MT05 : Champagne Gold (Hairline) WIC
+
+TILE
+TL01 : Living ceramic tile
+TL02 : Mosaic @Pool
+TL03 : Wall @powder rm
+TL04 : Floor @powder rm
+
+STONE
+ST01 : @TV Wall (double height)
+ST02 : @Private living accent wall + Minibar backing
+ST03 : Master bed headboard
+ST04 : Stone veneer (White) @Bed3
+ST05 : Headboard Bed3
+ST06 : Stone veneer (Black) @Mancave
+
+PAINT
+PT01 : White Paint ceiling (General)
+PT02 : White hi-gloss Paint ceiling (FLM)
+PT03 : Paint wall (3D Panel @Bed2)
+PT04 : Waterproof White Paint ceiling
+
+LAMINATE
+PL01 : General wood
+PL02 : Laminate match with wallpaper
+PL03 : Printed hi-gloss laminate
+PL04 : Backing @Wardrobe master bed + walk in closet
+PL05 : White Hi gloss @Wardrobe bed2
+PL06 : Laminate ลายผ้า @Bed3 (Match with WC03)
+PL07 : Black Wood Laminate
+PL08 : Black Wood Laminate @Multi purpose
+PL09 : Backing WIC
+
+LEATHER
+LE01 : Ivory Leather
+LE02 : Black Leather
+
+FABRIC
+FB01 : Ivory fabric
+
+WALLPAPER
+WC01 : General Wallpaper L1&M (bed3, Master bed)
+WC02 : General Wallpaper (M) เหมือนหนัง
+WC03 : General Wallpaper (bed2&3)
+
+GLASS & MIRROR
+GL01 : Clear Glass
+GL02 : Mirror
+GL03 : Bronze tint mirror
+GL04 : Printed glass (Pantry)
+GL05 : Printed glass (M floor / Private living accent wall)
+GL06 : Printed Mirror (M floor / minibar)
+GL07 : Bronze tint glass
+GL08 : Bronze tint glass + Printed
+GL09 : Back-painted Glass White (Pantry)
+GL10 : Back-painted Glass White (Master bed side)
+GL11 : Tint glass ฝาทอง @WIC
+
+SKIRT
+SK01 : Skirt match with MT01 caramel
+SK02 : Skirt match with MT05 Champagne
+
+WOOD
+WD01 : Solid Wood Color match with PL07
+
+LIGHTING
+LT01 : Track Light White
+LT02 : Downlight White
+LT03 : LED
+LT04 : Fiber optic
+LT05 : Track Light Black
+LT06 : Downlight Black
+LT07 : Downlight BOH
+LT08 : Downlight outdoor
+
+CEILING CODE
+CE01 : Painted PT01
+CE02 : Finished PL01
+CE03 : Painted PT02
+CE04 : Painted PT04 (Waterproof)
+CE05 : Black barisol
+
+DOOR
+D01 : Swing 2side Shoes room
+D02 : Swing Storage + Powder rm
+D03 : Swing BOH
+D04 : Swing Maid rm
+D05 : Swing WC - Maid rm
+D06 : Swing Outside - WC
+D07 : Swing Glass (smoke area)
+D08 : Swing air con
+D09 : Slide
+D10 : Slide WIC
+DB01A/B : Curtain Living area
+DB02A/B : Curtain Master Bed / WIC
+DB03A/B : Curtain Multi purpose / salon
+DB04A/B : Curtain Bed2
+DB05A/B : Curtain Bed3
+DB06A/B : Curtain Mancave (Blackout)
+DB07 : Curtain / Blind Master bath`;
+
+// Generic 2-letter material category codes used to tag swatches on a Material Board image
+export const MATERIAL_BOARD_CATEGORIES = `AG : Aggregate
+AL : Aluminum
+AY : Acrylic
+CP : Carpet
+FB : Fabric
+GL : Glass
+LE : Leather
+MT : Metal
+PL : Plastic
+PT : Paint & Coating
+SF : Special Finishes
+ST : Stone & Solid Surface
+TL : Tile
+VT : Vinyl Tile
+WD : Wood`;
+
+// Generic 2-letter furniture category codes — used to tag individual furniture pieces and FF&E
+export const FURNITURE_CATEGORIES = `AP : Appliance
+AT : Artwork
+BP : Bedding, Linens and Pillows
+CG : Casegood
+DB : Drapery & Blinds
+DL : Decorative Lighting (Lamp)
+SE : Seating
+TA : Table
+WK : Workstation / System Furniture`;
+
+// Plumbing fixture codes
+export const PLUMBING_CATEGORIES = `PF : Plumbing Fixtures
+SA : Sanitary Accessories`;
+
+// Electrical & lighting codes
+export const ELECTRICAL_CATEGORIES = `EE : Electrical Equipment
+LT : Lighting Fixtures`;
+
+// Combined full catalogue used for general scene tagging when no DD-phase project schedule is available
+export const FULL_CATEGORY_CATALOG = [
+    '— MATERIALS & FINISHES —',
+    MATERIAL_BOARD_CATEGORIES,
+    '',
+    '— FURNITURE & FF&E —',
+    FURNITURE_CATEGORIES,
+    '',
+    '— PLUMBING —',
+    PLUMBING_CATEGORIES,
+    '',
+    '— ELECTRICAL & LIGHTING —',
+    ELECTRICAL_CATEGORIES,
+].join('\n');
 
 export const STYLE_PRESETS = [
     "dwp Simple Elegance", "Warm Minimalism", "Tropical Modern", "Industrial Refined",
@@ -78,6 +245,7 @@ export interface VizProject {
     created: string;
     catalogKey?: string;
     requestKey?: string;
+    requestRowId?: string;
 }
 
 export interface VizLog {

@@ -44,6 +44,9 @@ steps:
 images:
   - 'asia-southeast3-docker.pkg.dev/dwpaivibecode/pipeline-repo/pipeline-app:latest'
 
+options:
+  machineType: 'E2_HIGHCPU_8'
+
 substitutions:
     _CLOUD_RUN_SERVICE: 'dwp-pipeline-v2'
     _NEXT_PUBLIC_SUPABASE_URL: '' 

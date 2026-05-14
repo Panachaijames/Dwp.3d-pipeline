@@ -3,13 +3,15 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useAuth } from '../../../contexts/AuthContext';
 import { supabase } from '../../../services/supabaseClient';
-import { KeyRound, FileBox, Image as ImageIcon } from 'lucide-react';
+import { googleDriveService, DriveFile } from '../../../services/googleDriveService';
+import { AlertCircle, Archive, CheckCircle2, FolderOpen, KeyRound, FileBox, Image as ImageIcon, UploadCloud } from 'lucide-react';
 import { FileBrowser } from '../../viewers/FileBrowser';
 
 const ModelViewer = dynamic(() => import('../../viewers/ModelViewer'), { ssr: false });
 
 const SUPPORTED_LOCAL = ['.gltf', '.glb', '.fbx', '.obj', '.3ds'];
 const DRIVE_FOLDER_ID = '12DiRer4UBvZcpsGZKd-ONAUIVahnMYEJ';
+const BACKUP_RESOURCE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.tga', '.vrmesh', '.ies', '.hdr', '.tx', '.exr']);
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -22,6 +24,15 @@ interface LocalModel {
 }
 
 type ViewMode = 'drive' | 'local';
+type LibraryTab = 'upload' | 'backup' | 'browse';
+
+interface BackupPlan {
+    sourceName: string;
+    maxFiles: File[];
+    resourceFiles: File[];
+    skippedCount: number;
+    totalBytes: number;
+}
 
 // ── Component ─────────────────────────────────────────────────────────
 
@@ -44,7 +55,7 @@ export default function ModelsTab() {
     const inputRef = useRef<HTMLInputElement>(null);
 
     // Digital Archive tab + multi-step upload
-    const [libraryTab, setLibraryTab] = useState<'upload' | 'browse'>('upload');
+    const [libraryTab, setLibraryTab] = useState<LibraryTab>('upload');
 
     // Upload Form State
     const [uploadCategory, setUploadCategory] = useState('');
@@ -64,6 +75,27 @@ export default function ModelsTab() {
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [uploadSuccess, setUploadSuccess] = useState(false);
 
+    // Smart Backup state
+    const [backupName, setBackupName] = useState('New_Backup_Task');
+    const [backupPlan, setBackupPlan] = useState<BackupPlan | null>(null);
+    const [backupUploading, setBackupUploading] = useState(false);
+    const [backupProgress, setBackupProgress] = useState<string | null>(null);
+    const [backupError, setBackupError] = useState<string | null>(null);
+    const [backupSuccess, setBackupSuccess] = useState(false);
+    const [backupTargetPath, setBackupTargetPath] = useState<{ id: string; name: string }[]>([
+        { id: DRIVE_FOLDER_ID, name: '3D Library' },
+    ]);
+    const [backupPickerOpen, setBackupPickerOpen] = useState(false);
+    const [backupPickerFolders, setBackupPickerFolders] = useState<DriveFile[]>([]);
+    const [backupPickerLoading, setBackupPickerLoading] = useState(false);
+    const [backupPickerError, setBackupPickerError] = useState<string | null>(null);
+
+    // Backup picker search + create-folder enhancements
+    const [backupFolderSearch, setBackupFolderSearch] = useState('');
+    const [creatingBackupFolder, setCreatingBackupFolder] = useState(false);
+    const [newBackupFolderName, setNewBackupFolderName] = useState('');
+    const [backupFolderCreating, setBackupFolderCreating] = useState(false);
+
     const [categories, setCategories] = useState<{id: string, name: string}[]>([]);
     const [isAddingCategory, setIsAddingCategory] = useState(false);
     const [newCategoryName, setNewCategoryName] = useState('');
@@ -74,6 +106,7 @@ export default function ModelsTab() {
 
     const modelInputRef = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
+    const backupFolderInputRef = useRef<HTMLInputElement | null>(null);
 
     // ── Load Categories ──────────────────────────────────
     useEffect(() => {
@@ -85,6 +118,34 @@ export default function ModelsTab() {
         };
         loadCategories();
     }, []);
+
+    useEffect(() => {
+        const loadBackupPickerFolders = async () => {
+            if (!backupPickerOpen) return;
+
+            const token = accessToken || localStorage.getItem('dwp_access_token');
+            if (!token) {
+                setIsAuthError(true);
+                setBackupPickerError('Google Drive access token missing. Please connect your account first.');
+                return;
+            }
+
+            const current = backupTargetPath[backupTargetPath.length - 1];
+            setBackupPickerLoading(true);
+            setBackupPickerError(null);
+            try {
+                const folders = await googleDriveService.listFolders(token, current.id);
+                setBackupPickerFolders(folders);
+            } catch (err: any) {
+                if (err?.message === 'Unauthorized') setIsAuthError(true);
+                setBackupPickerError(err?.message || 'Failed to load folders.');
+            } finally {
+                setBackupPickerLoading(false);
+            }
+        };
+
+        loadBackupPickerFolders();
+    }, [backupPickerOpen, backupTargetPath, accessToken]);
 
     const handleAddCategory = async () => {
         const trimmed = newCategoryName.trim();
@@ -140,29 +201,22 @@ export default function ModelsTab() {
         const baseName = getCombinedName();
 
         try {
-            // Helper to upload single file
+            // Upload directly browser → Drive so large model files aren't buffered through the server.
             const uploadFileToDrive = async (file: File, stepName: string) => {
-                setUploadProgress(`Uploading ${stepName}…`);
                 const ext = file.name.includes('.') ? file.name.split('.').pop() || '' : '';
                 const finalName = `${baseName}${ext ? '.' + ext : ''}`;
-                const renamedFile = new File([file], finalName, { type: file.type });
-                
-                const fd = new FormData();
-                fd.append('file', renamedFile);
-                fd.append('folderId', DRIVE_FOLDER_ID);
-
-                const res = await fetch('/api/drive/upload', { 
-                    method: 'POST', 
-                    headers: { 'Authorization': `Bearer ${token}` },
-                    body: fd 
-                });
-                
-                if (!res.ok) {
-                    if (res.status === 401) setIsAuthError(true);
-                    const errData = await res.json();
-                    throw new Error(errData.error || `Failed to upload ${stepName}`);
+                try {
+                    return await googleDriveService.uploadFile(
+                        token,
+                        DRIVE_FOLDER_ID,
+                        file,
+                        finalName,
+                        (pct) => setUploadProgress(`Uploading ${stepName}… ${pct}%`),
+                    );
+                } catch (err: any) {
+                    if (err?.message === 'Unauthorized') setIsAuthError(true);
+                    throw new Error(err?.message || `Failed to upload ${stepName}`);
                 }
-                return await res.json();
             };
 
             if (uploadImageFile) {
@@ -196,6 +250,223 @@ export default function ModelsTab() {
     };
 
     // ── Local file handling ─────────────────────────────────────────
+    // Smart Backup: mirrors the 3ds Max batch script criteria in the browser.
+    const getFileExtension = (fileName: string) => {
+        const dot = fileName.lastIndexOf('.');
+        return dot === -1 ? '' : fileName.slice(dot).toLowerCase();
+    };
+
+    const getBaseName = (fileName: string) => {
+        const dot = fileName.lastIndexOf('.');
+        return dot === -1 ? fileName : fileName.slice(0, dot);
+    };
+
+    const getRelativePathParts = (file: File) => {
+        const webkitPath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+        const parts = webkitPath.split('/').filter(Boolean);
+        return parts.length > 1 ? parts.slice(1) : parts;
+    };
+
+    const getSourceFolderName = (files: File[]) => {
+        const firstFile = files[0] as (File & { webkitRelativePath?: string }) | undefined;
+        return firstFile?.webkitRelativePath?.split('/').filter(Boolean)[0] || 'Selected folder';
+    };
+
+    const getLocalDateKey = (timestamp: number) => {
+        const d = new Date(timestamp);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+
+    const buildBackupPlan = (files: File[]): BackupPlan => {
+        const latestMaxByGroup = new Map<string, File>();
+        const resourceFiles: File[] = [];
+
+        files.forEach(file => {
+            const ext = getFileExtension(file.name);
+            if (ext === '.max') {
+                const groupBase = getBaseName(file.name).replace(/[0-9]+$/, '');
+                const groupKey = `${groupBase}|${getLocalDateKey(file.lastModified)}`;
+                const current = latestMaxByGroup.get(groupKey);
+                if (!current || file.lastModified > current.lastModified) {
+                    latestMaxByGroup.set(groupKey, file);
+                }
+                return;
+            }
+
+            if (BACKUP_RESOURCE_EXTENSIONS.has(ext)) {
+                resourceFiles.push(file);
+            }
+        });
+
+        const maxFiles = Array.from(latestMaxByGroup.values()).sort((a, b) => a.name.localeCompare(b.name));
+        const sortedResources = resourceFiles.sort((a, b) => getRelativePathParts(a).join('/').localeCompare(getRelativePathParts(b).join('/')));
+        const selectedFiles = [...maxFiles, ...sortedResources];
+
+        return {
+            sourceName: getSourceFolderName(files),
+            maxFiles,
+            resourceFiles: sortedResources,
+            skippedCount: files.length - selectedFiles.length,
+            totalBytes: selectedFiles.reduce((sum, file) => sum + file.size, 0),
+        };
+    };
+
+    const handleBackupFolderSelect = (files: FileList | null) => {
+        const arr = files ? Array.from(files) : [];
+        setBackupError(null);
+        setBackupSuccess(false);
+        if (!arr.length) {
+            setBackupPlan(null);
+            return;
+        }
+
+        const plan = buildBackupPlan(arr);
+        setBackupPlan(plan);
+        if (!backupName.trim() || backupName === 'New_Backup_Task') {
+            setBackupName(`${plan.sourceName}_backup`);
+        }
+        if (backupFolderInputRef.current) backupFolderInputRef.current.value = '';
+    };
+
+    const sanitizeDriveFolderName = (name: string) => {
+        return name.trim().replace(/[\\/]+/g, '-').replace(/\s+/g, ' ') || 'New_Backup_Task';
+    };
+
+    const ensureDrivePath = async (
+        token: string,
+        rootFolderId: string,
+        pathParts: string[],
+        folderCache: Map<string, string>,
+    ) => {
+        let currentFolderId = rootFolderId;
+        let currentPath = '';
+
+        for (const rawPart of pathParts) {
+            const folderName = sanitizeDriveFolderName(rawPart);
+            currentPath = currentPath ? `${currentPath}/${folderName}` : folderName;
+            const cached = folderCache.get(currentPath);
+            if (cached) {
+                currentFolderId = cached;
+                continue;
+            }
+
+            const createdId = await googleDriveService.createFolder(token, currentFolderId, folderName);
+            folderCache.set(currentPath, createdId);
+            currentFolderId = createdId;
+        }
+
+        return currentFolderId;
+    };
+
+    const getBackupTargetLabel = () => backupTargetPath.map(part => part.name).join(' / ');
+
+    const navigateBackupPicker = (folder: DriveFile) => {
+        setBackupFolderSearch('');
+        setCreatingBackupFolder(false);
+        setNewBackupFolderName('');
+        setBackupTargetPath(prev => [...prev, { id: folder.id, name: folder.name }]);
+    };
+
+    const jumpBackupPicker = (index: number) => {
+        setBackupFolderSearch('');
+        setCreatingBackupFolder(false);
+        setNewBackupFolderName('');
+        setBackupTargetPath(prev => prev.slice(0, index + 1));
+    };
+
+    const handleCreateBackupFolder = async () => {
+        if (!newBackupFolderName.trim()) {
+            setBackupPickerError('Please enter a folder name.');
+            return;
+        }
+        const cleaned = sanitizeDriveFolderName(newBackupFolderName);
+
+        const token = accessToken || localStorage.getItem('dwp_access_token');
+        if (!token) {
+            setIsAuthError(true);
+            setBackupPickerError('Google Drive access token missing. Please connect your account first.');
+            return;
+        }
+
+        const current = backupTargetPath[backupTargetPath.length - 1];
+        setBackupFolderCreating(true);
+        setBackupPickerError(null);
+        try {
+            const createdId = await googleDriveService.createFolder(token, current.id, cleaned);
+            setCreatingBackupFolder(false);
+            setNewBackupFolderName('');
+            setBackupFolderSearch('');
+            setBackupTargetPath(prev => [...prev, { id: createdId, name: cleaned }]);
+        } catch (err: any) {
+            if (err?.message === 'Unauthorized') setIsAuthError(true);
+            setBackupPickerError(err?.message || 'Failed to create folder.');
+        } finally {
+            setBackupFolderCreating(false);
+        }
+    };
+
+    const confirmBackupUpload = async () => {
+        if (!backupPlan || backupPlan.maxFiles.length + backupPlan.resourceFiles.length === 0) {
+            setBackupError("No .max or resource files matched the backup criteria.");
+            return;
+        }
+
+        const token = accessToken || localStorage.getItem('dwp_access_token');
+        if (!token) {
+            setIsAuthError(true);
+            setBackupError('Google Drive access token missing. Please connect your account first.');
+            return;
+        }
+
+        setBackupUploading(true);
+        setBackupError(null);
+        setBackupSuccess(false);
+
+        const folderCache = new Map<string, string>();
+
+        try {
+            const rootBackupName = sanitizeDriveFolderName(backupName);
+            setBackupProgress(`Creating ${rootBackupName}...`);
+            const selectedTarget = backupTargetPath[backupTargetPath.length - 1];
+            const backupFolderId = await googleDriveService.createFolder(token, selectedTarget.id, rootBackupName);
+            setBackupProgress('Creating resource folder...');
+            const resourceFolderId = await googleDriveService.createFolder(token, backupFolderId, 'resource');
+
+            for (let i = 0; i < backupPlan.maxFiles.length; i++) {
+                const file = backupPlan.maxFiles[i];
+                await googleDriveService.uploadFile(
+                    token,
+                    backupFolderId,
+                    file,
+                    file.name,
+                    pct => setBackupProgress(`Uploading MAX ${i + 1}/${backupPlan.maxFiles.length}: ${file.name} ${pct}%`),
+                );
+            }
+
+            for (let i = 0; i < backupPlan.resourceFiles.length; i++) {
+                const file = backupPlan.resourceFiles[i];
+                const relativeParts = getRelativePathParts(file);
+                const targetFolderId = await ensureDrivePath(token, resourceFolderId, relativeParts.slice(0, -1), folderCache);
+                await googleDriveService.uploadFile(
+                    token,
+                    targetFolderId,
+                    file,
+                    file.name,
+                    pct => setBackupProgress(`Uploading resource ${i + 1}/${backupPlan.resourceFiles.length}: ${file.name} ${pct}%`),
+                );
+            }
+
+            setBackupSuccess(true);
+            setLibraryTab('browse');
+        } catch (err: any) {
+            if (err?.message === 'Unauthorized') setIsAuthError(true);
+            setBackupError(err?.message || 'Backup upload failed');
+        } finally {
+            setBackupUploading(false);
+            setBackupProgress(null);
+        }
+    };
+
     const addLocalFiles = useCallback((files: FileList | File[]) => {
         const arr = Array.from(files).filter(f => {
             const ext = '.' + f.name.split('.').pop()!.toLowerCase();
@@ -269,6 +540,7 @@ export default function ModelsTab() {
                         <div style={{ display: 'flex', background: 'var(--bg2)', borderRadius: 12, padding: 4, gap: 4, border: '1px solid var(--bdr)' }}>
                             {([
                                 { id: 'upload', label: '↑ Upload Asset' },
+                                { id: 'backup', label: 'Backup' },
                                 { id: 'browse', label: '⊞ Browse Library' },
                             ] as const).map(tab => (
                                 <button
@@ -458,8 +730,148 @@ export default function ModelsTab() {
                     {/* ════════════════════════════════════════════════════
                         BROWSE LIBRARY TAB
                     ════════════════════════════════════════════════════ */}
+                    {libraryTab === 'backup' && (
+                        <div style={{ maxWidth: 760, margin: '0 auto', width: '100%', padding: '0 16px 40px' }}>
+                            <input
+                                ref={(el) => {
+                                    backupFolderInputRef.current = el;
+                                    if (el) {
+                                        el.setAttribute('webkitdirectory', '');
+                                        el.setAttribute('directory', '');
+                                    }
+                                }}
+                                type="file"
+                                multiple
+                                style={{ display: 'none' }}
+                                onChange={e => handleBackupFolderSelect(e.target.files)}
+                            />
+                            <div style={{ background: 'var(--bg2)', border: '1px solid var(--bdr)', borderRadius: 16, padding: 28, boxShadow: '0 4px 24px rgba(0,0,0,.08)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 20 }}>
+                                    <div>
+                                        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--tx1)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <Archive size={18} /> Smart Backup
+                                        </div>
+                                        <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 4 }}>Latest daily .max files go to the backup root. Resources go under resource with folders preserved.</div>
+                                    </div>
+                                    <button className="vw-btn vw-btn-g vw-btn-sm" onClick={() => backupFolderInputRef.current?.click()} disabled={backupUploading} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                                        <FolderOpen size={14} /> Select Folder
+                                    </button>
+                                </div>
+
+                                {backupError && (
+                                    <div style={{ background: 'rgba(220,50,50,.1)', border: '1px solid rgba(220,50,50,.3)', color: '#e55', padding: '10px 12px', borderRadius: 8, fontSize: 11, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <AlertCircle size={14} /> {backupError}
+                                        {isAuthError && <button onClick={() => requestDriveAccess(true)} style={{ marginLeft: 'auto', background: '#fff', color: '#000', border: 'none', padding: '2px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 'bold' }}>Connect</button>}
+                                    </div>
+                                )}
+
+                                {backupSuccess && (
+                                    <div style={{ background: 'rgba(34,197,94,.1)', border: '1px solid rgba(34,197,94,.3)', color: '#22c55e', padding: '10px 12px', borderRadius: 8, fontSize: 11, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <CheckCircle2 size={14} /> Backup uploaded to the 3D Library.
+                                    </div>
+                                )}
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+                                    <div>
+                                        <label style={{ fontSize: 10, color: 'var(--tx3)', display: 'block', marginBottom: 5, fontWeight: 600, textTransform: 'uppercase' }}>Backup Folder Name</label>
+                                        <input className="vw-fi" style={{ width: '100%', boxSizing: 'border-box' }} value={backupName} onChange={e => setBackupName(e.target.value)} disabled={backupUploading} />
+                                    </div>
+                                    <div style={{ background: 'var(--bg1)', border: '1px solid var(--bdr)', borderRadius: 8, padding: '9px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: 9, color: 'var(--tx3)', textTransform: 'uppercase', marginBottom: 4 }}>Drive Target</div>
+                                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getBackupTargetLabel()} / {sanitizeDriveFolderName(backupName)} / resource</div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="vw-btn vw-btn-g vw-btn-sm"
+                                            onClick={() => setBackupPickerOpen(true)}
+                                            disabled={backupUploading}
+                                            style={{ display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}
+                                        >
+                                            <FolderOpen size={13} /> Choose
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div onClick={() => !backupUploading && backupFolderInputRef.current?.click()} style={{ border: backupPlan ? '2px solid var(--or)' : '2px dashed var(--bdr)', borderRadius: 12, background: backupPlan ? 'rgba(232,115,26,.06)' : 'var(--bg1)', padding: 24, textAlign: 'center', cursor: backupUploading ? 'not-allowed' : 'pointer', transition: 'all 0.2s', marginBottom: 18 }}>
+                                    <UploadCloud size={30} className="mx-auto mb-2" style={{ color: backupPlan ? 'var(--or)' : 'var(--tx3)' }} />
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx1)' }}>{backupPlan ? backupPlan.sourceName : 'Choose a full project folder'}</div>
+                                    <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 4 }}>{backupPlan ? `${backupPlan.maxFiles.length + backupPlan.resourceFiles.length} matched files selected` : '.max plus jpg, png, tif, tga, vrmesh, ies, hdr, tx, exr resources'}</div>
+                                </div>
+
+                                {backupPlan && (
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 18 }}>
+                                        {[
+                                            ['MAX', backupPlan.maxFiles.length],
+                                            ['Resources', backupPlan.resourceFiles.length],
+                                            ['Skipped', backupPlan.skippedCount],
+                                            ['Size', formatSize(backupPlan.totalBytes)],
+                                        ].map(([label, value]) => (
+                                            <div key={label} style={{ background: 'var(--bg1)', border: '1px solid var(--bdr)', borderRadius: 8, padding: 12 }}>
+                                                <div style={{ fontSize: 9, color: 'var(--tx3)', textTransform: 'uppercase' }}>{label}</div>
+                                                <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--tx1)' }}>{value}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {backupPlan && (
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
+                                        <div style={{ border: '1px solid var(--bdr)', borderRadius: 8, overflow: 'hidden' }}>
+                                            <div style={{ padding: '7px 10px', fontSize: 10, fontWeight: 700, color: 'var(--tx2)', background: 'var(--bg1)' }}>Latest .max files</div>
+                                            <div style={{ maxHeight: 150, overflowY: 'auto' }}>
+                                                {backupPlan.maxFiles.length ? backupPlan.maxFiles.map(file => (
+                                                    <div key={`${file.name}-${file.lastModified}`} style={{ padding: '6px 10px', borderTop: '1px solid var(--bdr)', fontSize: 10, color: 'var(--tx2)', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                                                        <span style={{ color: 'var(--tx3)', whiteSpace: 'nowrap' }}>{formatSize(file.size)}</span>
+                                                    </div>
+                                                )) : <div style={{ padding: 10, fontSize: 10, color: 'var(--tx3)' }}>No .max files matched.</div>}
+                                            </div>
+                                        </div>
+                                        <div style={{ border: '1px solid var(--bdr)', borderRadius: 8, overflow: 'hidden' }}>
+                                            <div style={{ padding: '7px 10px', fontSize: 10, fontWeight: 700, color: 'var(--tx2)', background: 'var(--bg1)' }}>Resource files</div>
+                                            <div style={{ maxHeight: 150, overflowY: 'auto' }}>
+                                                {backupPlan.resourceFiles.length ? backupPlan.resourceFiles.slice(0, 80).map(file => (
+                                                    <div key={`${(file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name}-${file.lastModified}`} style={{ padding: '6px 10px', borderTop: '1px solid var(--bdr)', fontSize: 10, color: 'var(--tx2)', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getRelativePathParts(file).join('/')}</span>
+                                                        <span style={{ color: 'var(--tx3)', whiteSpace: 'nowrap' }}>{formatSize(file.size)}</span>
+                                                    </div>
+                                                )) : <div style={{ padding: 10, fontSize: 10, color: 'var(--tx3)' }}>No resource files matched.</div>}
+                                                {backupPlan.resourceFiles.length > 80 && <div style={{ padding: '6px 10px', borderTop: '1px solid var(--bdr)', fontSize: 10, color: 'var(--tx3)' }}>+ {backupPlan.resourceFiles.length - 80} more</div>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {backupUploading && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18, padding: 12, background: 'rgba(50,150,255,.05)', borderRadius: 8 }}>
+                                        <div style={{ fontSize: 20, animation: 'spin 1s linear infinite', display: 'inline-block', color: 'var(--or)' }}>â—Ž</div>
+                                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx1)' }}>{backupProgress}</span>
+                                    </div>
+                                )}
+
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: '1px solid var(--bdr)', paddingTop: 20 }}>
+                                    <button className="vw-btn vw-btn-g" onClick={() => { setBackupPlan(null); setBackupError(null); setBackupSuccess(false); }} disabled={backupUploading || !backupPlan} style={{ opacity: backupUploading || !backupPlan ? 0.5 : 1 }}>Clear</button>
+                                    <button className="vw-btn vw-btn-p" disabled={backupUploading || !backupPlan || backupPlan.maxFiles.length + backupPlan.resourceFiles.length === 0 || !backupName.trim()} onClick={confirmBackupUpload} style={{ padding: '10px 24px', opacity: (backupUploading || !backupPlan || backupPlan.maxFiles.length + backupPlan.resourceFiles.length === 0 || !backupName.trim()) ? 0.5 : 1 }}>
+                                        {backupUploading ? 'Uploading Backup...' : 'Upload Backup to Drive'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {libraryTab === 'browse' && (
                         <div style={{ flex: 1, minHeight: 0, padding: '0 20px 40px' }}>
+                            {backupSuccess && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(34,197,94,.08)', border: '1px solid rgba(34,197,94,.25)', borderRadius: 8, padding: '8px 12px', marginBottom: 14, fontSize: 11, color: '#22c55e' }}>
+                                    <CheckCircle2 size={14} />
+                                    <span>Backup uploaded. Refresh or open the new folder below if it is not visible yet.</span>
+                                </div>
+                            )}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(234,179,8,.08)', border: '1px solid rgba(234,179,8,.25)', borderRadius: 8, padding: '8px 12px', marginBottom: 14, fontSize: 11, color: 'var(--tx2)' }}>
+                                <span style={{ fontSize: 14 }}>💡</span>
+                                <span>Not seeing your files? <strong>Sign out and sign back in</strong> to refresh your Google Drive connection.</span>
+                            </div>
                             <FileBrowser
                                 initialFolderId={DRIVE_FOLDER_ID}
                                 accessToken={accessToken}
@@ -467,6 +879,145 @@ export default function ModelsTab() {
                             />
                         </div>
                     )}
+
+                    {backupPickerOpen && (() => {
+                        const filteredBackupFolders = backupFolderSearch.trim()
+                            ? backupPickerFolders.filter(f => f.name.toLowerCase().includes(backupFolderSearch.toLowerCase()))
+                            : backupPickerFolders;
+                        return (
+                        <div
+                            style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+                            onClick={() => setBackupPickerOpen(false)}
+                        >
+                            <div
+                                style={{ width: 620, maxWidth: '92vw', maxHeight: '82vh', background: 'var(--bg1)', border: '1px solid var(--bdr)', borderRadius: 14, boxShadow: '0 24px 70px rgba(0,0,0,.35)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+                                onClick={e => e.stopPropagation()}
+                            >
+                                <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--bdr)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                                    <div>
+                                        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--tx1)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <FolderOpen size={16} /> Choose Backup Location
+                                        </div>
+                                        <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 3 }}>Pick where the new backup folder will be created inside the 3D Library.</div>
+                                    </div>
+                                    <button className="vw-btn vw-btn-g vw-btn-sm" onClick={() => setBackupPickerOpen(false)}>Close</button>
+                                </div>
+
+                                <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--bdr)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <input
+                                        className="vw-fi"
+                                        placeholder="Search folders…"
+                                        value={backupFolderSearch}
+                                        onChange={e => setBackupFolderSearch(e.target.value)}
+                                        style={{ flex: 1, minWidth: 0, boxSizing: 'border-box' }}
+                                    />
+                                    <button
+                                        type="button"
+                                        className="vw-btn vw-btn-p vw-btn-sm"
+                                        onClick={() => { setCreatingBackupFolder(c => !c); setNewBackupFolderName(''); setBackupPickerError(null); }}
+                                        disabled={backupFolderCreating}
+                                        style={{ display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}
+                                    >
+                                        <span style={{ fontSize: 13, fontWeight: 800 }}>+</span> Add Folder
+                                    </button>
+                                </div>
+
+                                {creatingBackupFolder && (
+                                    <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--bdr)', background: 'var(--bg2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <input
+                                            className="vw-fi"
+                                            placeholder={`New folder inside "${backupTargetPath[backupTargetPath.length - 1].name}"…`}
+                                            value={newBackupFolderName}
+                                            onChange={e => setNewBackupFolderName(e.target.value)}
+                                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCreateBackupFolder(); } if (e.key === 'Escape') { setCreatingBackupFolder(false); setNewBackupFolderName(''); } }}
+                                            disabled={backupFolderCreating}
+                                            autoFocus
+                                            style={{ flex: 1, minWidth: 0, boxSizing: 'border-box' }}
+                                        />
+                                        <button
+                                            type="button"
+                                            className="vw-btn vw-btn-p vw-btn-sm"
+                                            onClick={handleCreateBackupFolder}
+                                            disabled={backupFolderCreating || !newBackupFolderName.trim()}
+                                            style={{ padding: '0 12px' }}
+                                        >
+                                            {backupFolderCreating ? 'Creating…' : 'Create'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="vw-btn vw-btn-g vw-btn-sm"
+                                            onClick={() => { setCreatingBackupFolder(false); setNewBackupFolderName(''); }}
+                                            disabled={backupFolderCreating}
+                                            style={{ padding: '0 12px' }}
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                )}
+
+                                <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--bdr)', display: 'flex', alignItems: 'center', gap: 6, overflowX: 'auto' }}>
+                                    {backupTargetPath.map((part, index) => (
+                                        <React.Fragment key={part.id}>
+                                            {index > 0 && <span style={{ color: 'var(--tx3)', fontSize: 12 }}>/</span>}
+                                            <button
+                                                type="button"
+                                                onClick={() => jumpBackupPicker(index)}
+                                                style={{ border: 'none', background: index === backupTargetPath.length - 1 ? 'var(--bg3)' : 'transparent', color: index === backupTargetPath.length - 1 ? 'var(--tx1)' : 'var(--tx3)', borderRadius: 5, padding: '3px 7px', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                                            >
+                                                {part.name}
+                                            </button>
+                                        </React.Fragment>
+                                    ))}
+                                </div>
+
+                                <div style={{ flex: 1, overflowY: 'auto', minHeight: 260, padding: 10 }}>
+                                    {backupPickerLoading ? (
+                                        <div style={{ height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tx3)', fontSize: 12 }}>Loading folders...</div>
+                                    ) : backupPickerError ? (
+                                        <div style={{ height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e55', fontSize: 12, textAlign: 'center', padding: 20 }}>
+                                            <div>
+                                                {backupPickerError}
+                                                {isAuthError && (
+                                                    <div style={{ marginTop: 10 }}>
+                                                        <button onClick={() => requestDriveAccess(true)} style={{ background: '#fff', color: '#000', border: 'none', padding: '4px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 'bold' }}>Connect</button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ) : filteredBackupFolders.length === 0 ? (
+                                        <div style={{ height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tx3)', fontSize: 12 }}>
+                                            {backupFolderSearch.trim() ? 'No folders match your search.' : 'No subfolders here.'}
+                                        </div>
+                                    ) : (
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 4 }}>
+                                            {filteredBackupFolders.map(folder => (
+                                                <button
+                                                    key={folder.id}
+                                                    type="button"
+                                                    onClick={() => navigateBackupPicker(folder)}
+                                                    style={{ border: '1px solid var(--bdr)', background: 'var(--bg2)', color: 'var(--tx1)', borderRadius: 8, padding: '10px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, textAlign: 'left' }}
+                                                >
+                                                    <span style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                                                        <FolderOpen size={15} style={{ color: 'var(--or)', flexShrink: 0 }} />
+                                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 700 }}>{folder.name}</span>
+                                                    </span>
+                                                    <span style={{ color: 'var(--tx3)', fontSize: 15 }}>›</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div style={{ padding: 14, borderTop: '1px solid var(--bdr)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: 'var(--bg2)' }}>
+                                    <div style={{ fontSize: 10, color: 'var(--tx3)', minWidth: 0 }}>
+                                        Current target: <strong style={{ color: 'var(--tx1)' }}>{getBackupTargetLabel()}</strong>
+                                    </div>
+                                    <button className="vw-btn vw-btn-p" onClick={() => setBackupPickerOpen(false)}>Use This Folder</button>
+                                </div>
+                            </div>
+                        </div>
+                        );
+                    })()}
                 </div>
             )}
 

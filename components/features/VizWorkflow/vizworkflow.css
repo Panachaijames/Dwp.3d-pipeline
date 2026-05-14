@@ -219,6 +219,33 @@
     background: var(--ord)
 }
 
+.vw-rp-del {
+    margin-left: auto;
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    background: transparent;
+    border: none;
+    color: var(--tx3);
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    padding: 0
+}
+
+.vw-rp:hover .vw-rp-del {
+    display: flex
+}
+
+.vw-rp-del:hover {
+    background: rgba(220, 38, 38, 0.15);
+    color: #dc2626
+}
+
 .vw-dot {
     width: 6px;
     height: 6px;

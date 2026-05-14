@@ -7,7 +7,7 @@ interface Props { project: VizProject; projects: VizProject[]; onSave: (p: VizPr
 export default function ProjectModal({ project, projects, onSave, onDelete, onClose }: Props) {
     const [p, setP] = React.useState(project);
     const isEdit = projects.find(x => x.id === p.id);
-    const canDelete = Boolean(isEdit && onDelete && !p.catalogKey && !p.requestKey);
+    const canDelete = Boolean(isEdit && onDelete);
     return (
         <div className="vw-ov" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
             <div className="vw-mdl">

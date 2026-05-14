@@ -20,6 +20,7 @@ export interface PdfSection {
 }
 
 export interface PdfContextSelection {
+    id: string;
     sectionName: string;
     text: string;
     pdfs: { name: string; storagePath?: string; textContent: string }[];
@@ -272,6 +273,7 @@ export const usePdfLibraryStore = create<PdfLibraryState>((set, get) => ({
                     .map((pdf) => `--- [DOCUMENT: ${pdf.name}] ---\n${pdf.textContent}`)
                     .join('\n\n');
                 return {
+                    id,
                     sectionName: fullPath,
                     text: concatenatedText,
                     pdfs: section.pdfs.map(pdf => ({

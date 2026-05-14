@@ -8,16 +8,22 @@ interface PdfSectionPickerProps {
     projectId: string;
     onClose: () => void;
     onConfirm: (selections: PdfContextSelection[]) => void;
+    initialSelectedIds?: string[];
 }
 
 export const PdfSectionPicker: React.FC<PdfSectionPickerProps> = ({
     isOpen,
     projectId,
     onClose,
-    onConfirm
+    onConfirm,
+    initialSelectedIds
 }) => {
-    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(initialSelectedIds ?? []));
     const getSelectedSectionsText = usePdfLibraryStore(state => state.getSelectedSectionsText);
+
+    React.useEffect(() => {
+        if (isOpen) setSelectedIds(new Set(initialSelectedIds ?? []));
+    }, [isOpen]);
 
     if (!isOpen) return null;
 
@@ -69,11 +75,10 @@ export const PdfSectionPicker: React.FC<PdfSectionPickerProps> = ({
                     </button>
                     <button
                         onClick={handleConfirm}
-                        disabled={selectedIds.size === 0}
-                        className="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-700 disabled:bg-neutral-200 dark:disabled:bg-neutral-800 disabled:text-neutral-400 dark:disabled:text-neutral-500 disabled:cursor-not-allowed text-white rounded-md transition-colors flex items-center gap-2"
+                        className="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition-colors flex items-center gap-2"
                     >
                         <Check size={16} />
-                        Attach {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
+                        {selectedIds.size > 0 ? `Attach (${selectedIds.size})` : 'Clear All'}
                     </button>
                 </div>
             </div>

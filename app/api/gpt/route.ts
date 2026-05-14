@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-        const { prompt, systemPrompt } = await request.json();
+        const { prompt, systemPrompt, imageData } = await request.json();
 
         if (!prompt) {
             return NextResponse.json({ error: 'prompt is required' }, { status: 400 });
@@ -18,9 +18,18 @@ export async function POST(request: NextRequest) {
 
         const client = new OpenAI({ apiKey });
 
-        const combinedInput = systemPrompt
+        const combinedText = systemPrompt
             ? `System Instructions:\n${systemPrompt}\n\nUser Request:\n${prompt}`
             : prompt;
+
+        // Build input — multimodal if image is provided
+        let combinedInput: any = combinedText;
+        if (imageData && typeof imageData === 'string' && imageData.startsWith('data:')) {
+            combinedInput = [
+                { type: 'input_image', image_url: imageData },
+                { type: 'input_text', text: combinedText },
+            ];
+        }
 
         // Based on the user's provided document structure
         const response: any = await (client as any).responses.create({
