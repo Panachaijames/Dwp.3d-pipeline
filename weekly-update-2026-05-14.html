@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Weekly Update — 14 May 2026</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: #F5F4F1;
+      color: #1a1a1a;
+      padding: 48px 56px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 2.5px solid #E8731A;
+      padding-bottom: 18px;
+      margin-bottom: 36px;
+    }
+    .header-left h1 {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    .header-left .subtitle {
+      font-size: 13px;
+      color: #777;
+      margin-top: 4px;
+    }
+    .header-right {
+      text-align: right;
+    }
+    .header-right .date {
+      font-size: 13px;
+      font-weight: 600;
+      color: #E8731A;
+    }
+    .header-right .branch {
+      font-size: 12px;
+      color: #999;
+      margin-top: 2px;
+    }
+
+    /* ── Stats bar ── */
+    .stats {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 36px;
+    }
+    .stat-card {
+      flex: 1;
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 10px;
+      padding: 16px 20px;
+    }
+    .stat-card .num {
+      font-size: 28px;
+      font-weight: 700;
+      color: #E8731A;
+    }
+    .stat-card .label {
+      font-size: 12px;
+      color: #888;
+      margin-top: 2px;
+    }
+
+    /* ── Section ── */
+    .section {
+      margin-bottom: 32px;
+    }
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #E8731A;
+      margin-bottom: 14px;
+    }
+
+    /* ── Feature card ── */
+    .feature-card {
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin-bottom: 12px;
+    }
+    .feature-card .fc-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+    .badge-new   { background: #E8F5E9; color: #2E7D32; }
+    .badge-improve { background: #FFF3E0; color: #E65100; }
+    .badge-fix   { background: #E3F2FD; color: #1565C0; }
+    .badge-infra { background: #F3E5F5; color: #6A1B9A; }
+
+    .feature-card h3 {
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .feature-card p {
+      font-size: 13px;
+      color: #555;
+      line-height: 1.6;
+    }
+    .feature-card .file-tag {
+      display: inline-block;
+      font-size: 11px;
+      background: #F5F4F1;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 2px 7px;
+      margin-top: 10px;
+      margin-right: 4px;
+      color: #555;
+      font-family: 'Courier New', monospace;
+    }
+
+    /* ── Bullet list ── */
+    ul.detail {
+      list-style: none;
+      margin-top: 8px;
+    }
+    ul.detail li {
+      font-size: 13px;
+      color: #555;
+      padding: 3px 0;
+      padding-left: 16px;
+      position: relative;
+    }
+    ul.detail li::before {
+      content: '–';
+      position: absolute;
+      left: 0;
+      color: #E8731A;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      border-top: 1px solid #ddd;
+      margin-top: 40px;
+      padding-top: 16px;
+      font-size: 11px;
+      color: #bbb;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    @media print {
+      body { padding: 32px 40px; background: #fff; }
+      .feature-card { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Header ── -->
+  <div class="header">
+    <div class="header-left">
+      <h1>DWP Visualization — Weekly Update</h1>
+      <div class="subtitle">3D Pipeline · VizWorkflow App</div>
+    </div>
+    <div class="header-right">
+      <div class="date">14 May 2026</div>
+      <div class="branch">branch: main · commit 144e93b</div>
+    </div>
+  </div>
+
+  <!-- ── Stats ── -->
+  <div class="stats">
+    <div class="stat-card">
+      <div class="num">22</div>
+      <div class="label">Files changed</div>
+    </div>
+    <div class="stat-card">
+      <div class="num">3,586</div>
+      <div class="label">Lines added</div>
+    </div>
+    <div class="stat-card">
+      <div class="num">388</div>
+      <div class="label">Lines removed</div>
+    </div>
+    <div class="stat-card">
+      <div class="num">4</div>
+      <div class="label">New features</div>
+    </div>
+  </div>
+
+  <!-- ── New Features ── -->
+  <div class="section">
+    <div class="section-title">New Features</div>
+
+    <div class="feature-card">
+      <div class="fc-header">
+        <span class="badge badge-new">NEW</span>
+        <h3>DD Material Code Tagger</h3>
+      </div>
+      <p>A new render annotation tool for the DD (Design Development) phase. Users can upload a render, click to place draggable material code labels directly on the image, and export an annotated PNG with all codes overlaid.</p>
+      <ul class="detail">
+        <li>Click-to-place annotations with drag-to-reposition support</li>
+        <li>Zoom control and adjustable label scale</li>
+        <li>Detailed colour mode for label visibility on light/dark renders</li>
+        <li>Canvas-based export that bakes annotations into the final image</li>
+        <li>Added as a new render mode: <em>"Material Code Tagger"</em> in the Workspace</li>
+      </ul>
+      <span class="file-tag">components/features/DDMaterialTagger/AnnotatedRender.tsx</span>
+    </div>
+
+    <div class="feature-card">
+      <div class="fc-header">
+        <span class="badge badge-new">NEW</span>
+        <h3>DD Phase Material Schedule</h3>
+      </div>
+      <p>A full project-level material code library is now embedded in the app, covering all DD phase finish categories with human-readable descriptions.</p>
+      <ul class="detail">
+        <li>Categories: Metal, Tile, Stone, Paint, Laminate, Leather, Fabric, Wallpaper, Glass &amp; Mirror</li>
+        <li>Used by the Material Code Tagger for auto-complete when placing annotations</li>
+      </ul>
+      <span class="file-tag">components/features/VizWorkflow/constants.ts</span>
+    </div>
+
+    <div class="feature-card">
+      <div class="fc-header">
+        <span class="badge badge-new">NEW</span>
+        <h3>Google Sheets Material Export API</h3>
+      </div>
+      <p>A new backend endpoint aggregates all placed material annotations, appends AI-generated price estimates, and pushes the result directly to a Google Sheet via the Sheets API.</p>
+      <ul class="detail">
+        <li>Deduplicates annotations by code and counts quantities per room</li>
+        <li>Attaches source links and price range estimates</li>
+        <li>Uploads an annotated reference image to Google Drive alongside the sheet</li>
+        <li>Max execution time: 60 seconds</li>
+      </ul>
+      <span class="file-tag">app/api/sheets/export/route.ts</span>
+    </div>
+
+    <div class="feature-card">
+      <div class="fc-header">
+        <span class="badge badge-new">NEW</span>
+        <h3>3D Model Backup Tab (Google Drive)</h3>
+      </div>
+      <p>The Models tab now includes a dedicated <em>Backup</em> tab that lets users upload 3D resource files directly from the browser to a chosen Google Drive folder — bypassing the server to handle large files efficiently.</p>
+      <ul class="detail">
+        <li>Supported types: .jpg, .jpeg, .png, .bmp, .tif, .tiff, .tga, .vrmesh, .ies, .hdr, .tx, .exr</li>
+        <li>Inline Drive folder picker with breadcrumb navigation</li>
+        <li>Create new subfolders directly from the picker</li>
+        <li>Per-file upload progress with error reporting</li>
+        <li>Direct browser → Drive upload (no server buffer)</li>
+      </ul>
+      <span class="file-tag">components/features/VizWorkflow/ModelsTab.tsx</span>
+    </div>
+  </div>
+
+  <!-- ── Improvements ── -->
+  <div class="section">
+    <div class="section-title">Improvements</div>
+
+    <div class="feature-card">
+      <div class="fc-header">
+        <span class="badge badge-improve">IMPROVE</span>
+        <h3>Material Board Image Generation (Imagen)</h3>
+      </div>
+      <p>The PromptGenWorkspace now supports AI-driven material board image generation using Imagen. A reference image can be analysed by Gemini (furniture &amp; plant detection) before passing the description to Imagen to generate flat-lay material board variations.</p>
+      <ul class="detail">
+        <li>Added <code>singleImage</code> mode to Imagen API — runs a single prompt as-is instead of splitting into multiple sections</li>
+        <li>Added <code>imageData</code> pass-through for image-to-image input</li>
+        <li>Structured reference analysis prompt extracts chair type, upholstery, plant, and colour story</li>
+      </ul>
+      <span class="file-tag">app/api/imagen/route.ts</span>
+      <span class="file-tag">components/features/VizWorkflow/PromptGenWorkspace.tsx</span>
+    </div>
+
+    <div class="feature-card">
+      <div class="fc-header">
+        <span class="badge badge-improve">IMPROVE</span>
+        <h3>File Browser Overhaul</h3>
+      </div>
+      <p>Significant updates to the FileBrowser component (209 lines changed), improving navigation, display, and interaction for project files within the workspace.</p>
+      <span class="file-tag">components/viewers/FileBrowser.tsx</span>
+    </div>
+
+    <div class="feature-card">
+      <div class="fc-header">
+        <span class="badge badge-improve">IMPROVE</span>
+        <h3>New /3dmodel App Route</h3>
+      </div>
+      <p>A dedicated <code>/3dmodel</code> page was added as a standalone entry point for the VizWorkflow app, complete with auth guard (login, outsource portal, and access-pending states).</p>
+      <span class="file-tag">app/3dmodel/page.tsx</span>
+    </div>
+
+    <div class="feature-card">
+      <div class="fc-header">
+        <span class="badge badge-improve">IMPROVE</span>
+        <h3>Gemini &amp; GPT API Minor Updates</h3>
+      </div>
+      <p>Both the Gemini and GPT route handlers received small updates (13–16 lines each), likely aligned with the new material board and annotation features.</p>
+      <span class="file-tag">app/api/gemini/route.ts</span>
+      <span class="file-tag">app/api/gpt/route.ts</span>
+    </div>
+  </div>
+
+  <!-- ── Infrastructure ── -->
+  <div class="section">
+    <div class="section-title">Infrastructure</div>
+
+    <div class="feature-card">
+      <div class="fc-header">
+        <span class="badge badge-infra">INFRA</span>
+        <h3>Docker &amp; Cloud Build</h3>
+      </div>
+      <ul class="detail">
+        <li>Added <code>.dockerignore</code> to keep image lean</li>
+        <li>Updated <code>Dockerfile</code> with 3 new lines (likely new route/module inclusion)</li>
+        <li>Updated <code>cloudbuild.yaml</code> with 3 new lines</li>
+      </ul>
+      <span class="file-tag">Dockerfile</span>
+      <span class="file-tag">.dockerignore</span>
+      <span class="file-tag">cloudbuild.yaml</span>
+    </div>
+  </div>
+
+  <!-- ── Footer ── -->
+  <div class="footer">
+    <span>DWP Visualization · 3DPipeline</span>
+    <span>Generated 14 May 2026 · panachai.t@dwp.com</span>
+  </div>
+
+</body>
+</html>

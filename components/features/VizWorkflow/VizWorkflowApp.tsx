@@ -28,6 +28,7 @@ const RenderTab = nextDynamic(() => import('./RenderTab'), { ssr: false });
 const NamingTab = nextDynamic(() => import('./NamingTab'), { ssr: false });
 const Book3DTab = nextDynamic(() => import('./Book3DTab'), { ssr: false });
 const Portal3DTab = nextDynamic(() => import('./Portal3DTab'), { ssr: false });
+const ObjectExtractorTab = nextDynamic(() => import('./ObjectExtractorTab'), { ssr: false });
 const ReferenceTab = nextDynamic(() => import('./ReferenceTab'), { ssr: false });
 const ScheduleTab = nextDynamic(() => import('./ScheduleTab'), { ssr: false });
 const RenderWorkspace = nextDynamic(() => import('./RenderWorkspace'), { ssr: false });
@@ -179,6 +180,7 @@ const mergeProjects = (requestRows: any[] | null | undefined, vizRows: any[] | n
 const TAB_ROUTES: Record<string, string> = {
     models: '/3dmodel',
     book3d: '/book3d',
+    objectExtractor: '/object-extractor',
 };
 const PATH_TO_TAB: Record<string, string> = Object.fromEntries(
     Object.entries(TAB_ROUTES).map(([tab, path]) => [path, tab])
@@ -495,6 +497,7 @@ export default function VizWorkflowApp({ initialTab }: { initialTab?: string } =
         { k: "book3d", ic: "◫", lb: "Book a 3D" },
         { k: "portal3d", ic: "◩", lb: "3D Portal" },
         { k: "reference", ic: "◆", lb: "Reference" },
+        { k: "objectExtractor", ic: "✂", lb: "Object Extractor" },
     ];
     const TOOL_ITEMS = user?.role === 'leader'
         ? [...TOOL_ITEMS_BASE, { k: "schedule", ic: "📅", lb: "3D Schedule" }, { k: "settings", ic: "⚙", lb: "Settings" }]
@@ -666,6 +669,7 @@ export default function VizWorkflowApp({ initialTab }: { initialTab?: string } =
                 {tab === "book3d" && <Book3DTab proj={proj} />}
                 {tab === "portal3d" && <Portal3DTab />}
                 {tab === "reference" && <ReferenceTab />}
+                {tab === "objectExtractor" && <ObjectExtractorTab />}
                 {tab === "schedule" && user?.role === 'leader' && <ScheduleTab rawRequests={rawRequests} setRawRequests={setRawRequests} />}
                 {tab === "settings" && <div className="p-8 h-full overflow-y-auto w-full"><SettingsPortal /></div>}
             </div>

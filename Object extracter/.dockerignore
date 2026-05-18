@@ -1,0 +1,8 @@
+node_modules
+.git
+.gcloud-tmp
+.env
+.env.local
+*.md
+.vscode
+.idea
