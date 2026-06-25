@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
             }
         }
 
-        const res = NextResponse.redirect(new URL('/', baseUrl));
+        const res = NextResponse.redirect(new URL('/app', baseUrl));
 
         // 1 hour expiry (matches token usually)
         res.cookies.set('dwp-aps-token', tokenData.access_token, {
