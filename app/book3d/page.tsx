@@ -43,7 +43,7 @@ function EmbedContent() {
                 {/* Back to VizWorkflow button */}
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--bdr)' }}>
                     <Link
-                        href="/app"
+                        href="/pipeline"
                         style={{
                             display: 'inline-flex',
                             alignItems: 'center',

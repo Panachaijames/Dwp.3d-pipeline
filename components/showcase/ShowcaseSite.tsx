@@ -182,7 +182,7 @@ function Overlay() {
         <h1 style={{ ...h1, fontSize: "clamp(44px, 9vw, 104px)" }}>Welcome home.</h1>
         <p style={{ ...sub, maxWidth: 520, textAlign: "center" }}>DWP — architecture and interiors, visualized from first line to finished home.</p>
         <a
-          href="/app"
+          href="/pipeline"
           style={{ marginTop: 26, padding: "13px 30px", border: "1px solid rgba(150,210,255,0.55)", borderRadius: 999, color: "#eaf6ff", fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase", display: "inline-block", textDecoration: "none", background: "rgba(150,210,255,0.08)", cursor: "pointer", transition: "all 0.2s ease" }}
           onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(150,210,255,0.92)"; e.currentTarget.style.color = "#06101f"; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(150,210,255,0.08)"; e.currentTarget.style.color = "#eaf6ff"; }}

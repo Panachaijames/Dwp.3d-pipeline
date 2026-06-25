@@ -21,9 +21,9 @@ export default function ShowcasePrePage() {
       }}
     >
       <ShowcaseSite />
-      {/* always-available entry into the pipeline app (lives at /app) */}
+      {/* always-available entry into the pipeline app (lives at /pipeline) */}
       <a
-        href="/app"
+        href="/pipeline"
         style={{
           position: "fixed",
           top: 20,
