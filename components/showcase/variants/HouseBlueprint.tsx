@@ -45,40 +45,49 @@ type Part = VillaPart;
    same massing as the opening blueprint. */
 export function buildVilla(): Part[] {
   const base = -1.6;
-  const wallT = 0.08;
-
-  // lower volume (ground floor), offset to -x
-  const lw = 2.6, ld = 2.4, lh = 1.3, xL = -0.35;
-  const lvY = base + lh / 2;
-  const lowerTopY = base + lh;
-
-  // upper volume (first floor), wider + offset to +x → cantilevers over the terrace
-  const uw = 3.3, ud = 1.9, uh = 1.2, xU = 0.3;
-  const uvY = lowerTopY + uh / 2;
-  const upperTopY = lowerTopY + uh;
-
   const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
   type Spec = { geo: THREE.BufferGeometry; pos: [number, number, number]; order: number; accent?: boolean; kind: string };
   const s: Spec[] = [];
 
-  s.push({ geo: box(4.8, 0.14, 3.0), pos: [0.1, base - 0.05, 0], order: 0.0, kind: "slab" }); // terrace deck
-  s.push({ geo: box(lw, lh, ld), pos: [xL, lvY, 0], order: 0.12, kind: "wall" }); // lower volume
-  s.push({ geo: box(lw + 0.6, 0.1, ld + 0.6), pos: [xL, lowerTopY, 0], order: 0.3, accent: true, kind: "slab" }); // floor/roof plane
-  s.push({ geo: box(0.1, 0.32, 2.8), pos: [2.35, base + 0.12, 0], order: 0.34, kind: "detail" }); // parapet
-  s.push({ geo: box(0.1, lh, 0.1), pos: [1.55, lvY, 0.7], order: 0.46, kind: "column" }); // pilotis
-  s.push({ geo: box(0.1, lh, 0.1), pos: [1.55, lvY, -0.7], order: 0.48, kind: "column" });
-  s.push({ geo: box(uw, uh, ud), pos: [xU, uvY, 0], order: 0.42, kind: "wall" }); // upper volume
-  s.push({ geo: box(uw + 0.6, 0.1, ud + 0.6), pos: [xU, upperTopY + 0.05, 0], order: 0.62, accent: true, kind: "roof" }); // flat roof
-  s.push({ geo: box(1.5, 0.07, 0.72), pos: [xL, base + 1.02, ld / 2 + 0.35], order: 0.7, accent: true, kind: "roof" }); // canopy
-  s.push({ geo: box(0.62, 1.02, wallT * 1.6), pos: [xL + 0.2, base + 0.53, ld / 2 + 0.03], order: 0.74, accent: true, kind: "door" });
-  s.push({ geo: box(0.05, lh * 0.78, 0.05), pos: [xL - 0.7, lvY, ld / 2 + 0.02], order: 0.8, accent: true, kind: "detail" });
-  s.push({ geo: box(0.05, lh * 0.78, 0.05), pos: [xL, lvY, ld / 2 + 0.02], order: 0.81, accent: true, kind: "detail" });
-  s.push({ geo: box(0.05, lh * 0.78, 0.05), pos: [xL + 0.7, lvY, ld / 2 + 0.02], order: 0.82, accent: true, kind: "detail" });
-  s.push({ geo: box(uw * 0.82, 0.42, 0.05), pos: [xU, uvY + 0.08, ud / 2 + 0.02], order: 0.86, accent: true, kind: "glass" }); // ribbon window
-  s.push({ geo: box(0.05, 0.42, 0.06), pos: [xU - 0.8, uvY + 0.08, ud / 2 + 0.02], order: 0.88, accent: true, kind: "detail" });
-  s.push({ geo: box(0.05, 0.42, 0.06), pos: [xU + 0.8, uvY + 0.08, ud / 2 + 0.02], order: 0.89, accent: true, kind: "detail" });
-  s.push({ geo: box(0.06, lh * 0.7, ld * 0.7), pos: [xL - lw / 2 - 0.02, lvY, 0], order: 0.92, accent: true, kind: "glass" }); // side glazing
-  s.push({ geo: box(0.06, 0.42, ud * 0.7), pos: [xU + uw / 2 + 0.02, uvY + 0.08, 0], order: 0.95, accent: true, kind: "glass" });
+  // ground terrace deck (wider than the house — outdoor space at the front)
+  const Tt = 0.16;
+  s.push({ geo: box(5.6, Tt, 3.8), pos: [0.0, base - Tt / 2, 0], order: 0.0, kind: "slab" });
+
+  // lower volume (ground floor) — the wider base, offset left
+  const LW = 3.2, LD = 2.6, LH = 1.5, xL = -0.6;
+  const lvY = base + LH / 2;
+  const lowerTop = base + LH;
+  s.push({ geo: box(LW, LH, LD), pos: [xL, lvY, 0], order: 0.12, kind: "wall" });
+
+  // pilotis carrying the cantilever on the right (a covered terrace beneath)
+  s.push({ geo: box(0.13, LH, 0.13), pos: [1.9, lvY, 0.85], order: 0.2, kind: "column" });
+  s.push({ geo: box(0.13, LH, 0.13), pos: [1.9, lvY, -0.85], order: 0.22, kind: "column" });
+
+  // first-floor slab (floor of the upper volume) — shifted right so it cantilevers
+  const St = 0.13, xS = 0.25;
+  const slabY = lowerTop + St / 2;
+  const slabTop = lowerTop + St;
+  s.push({ geo: box(3.9, St, 2.6), pos: [xS, slabY, 0], order: 0.32, accent: true, kind: "slab" });
+
+  // upper volume — offset right, resting cleanly on the slab
+  const UW = 3.4, UD = 2.0, UH = 1.4, xU = 0.4;
+  const uvY = slabTop + UH / 2;
+  const upperTop = slabTop + UH;
+  s.push({ geo: box(UW, UH, UD), pos: [xU, uvY, 0], order: 0.44, kind: "wall" });
+
+  // floating flat roof slab (overhangs the upper volume as a thin parapet)
+  const Rt = 0.14;
+  s.push({ geo: box(UW + 0.4, Rt, UD + 0.4), pos: [xU, upperTop + Rt / 2, 0], order: 0.58, accent: true, kind: "roof" });
+
+  // glazing — big living-room window, a side glaze, and the upper ribbon
+  const frontZ = LD / 2;
+  s.push({ geo: box(1.6, LH * 0.72, 0.05), pos: [xL - 0.5, lvY, frontZ + 0.03], order: 0.66, accent: true, kind: "glass" });
+  s.push({ geo: box(0.05, LH * 0.62, LD * 0.62), pos: [xL - LW / 2 - 0.03, lvY, 0], order: 0.68, accent: true, kind: "glass" });
+  s.push({ geo: box(UW * 0.82, UH * 0.5, 0.05), pos: [xU, uvY + 0.05, UD / 2 + 0.03], order: 0.7, accent: true, kind: "glass" });
+
+  // entry door + slim canopy, beside the living glazing
+  s.push({ geo: box(0.75, 1.05, 0.08), pos: [0.4, base + 0.525, frontZ + 0.04], order: 0.78, accent: true, kind: "door" });
+  s.push({ geo: box(1.4, 0.08, 0.8), pos: [0.4, base + 1.12, frontZ + 0.25], order: 0.82, accent: true, kind: "roof" });
 
   return s.map((spec, i) => {
     const a = i * 2.3999632;
@@ -107,11 +116,15 @@ export function VillaModel({
   assembleEnd = 1,
   scrollSpin = 0.12,
   idleSpin = 0.05,
+  fadeStart = 1.1,
+  fadeEnd = 1.2,
 }: {
   assembleStart?: number;
   assembleEnd?: number;
   scrollSpin?: number;
   idleSpin?: number;
+  fadeStart?: number;
+  fadeEnd?: number;
 } = {}) {
   const scroll = useScroll();
   const spin = useRef<THREE.Group>(null!);
@@ -160,6 +173,10 @@ export function VillaModel({
     const t = state.clock.elapsedTime;
     const a = smoothstep(assembleStart, assembleEnd, off); // assembly progress
     const built = smoothstep(0.7, 1, a);
+    const fade = 1 - smoothstep(fadeStart, fadeEnd, off); // dissolve out near the end of its beat
+
+    if (spin.current) spin.current.visible = fade > 0.005;
+    if (fade <= 0.005) return;
 
     if (spin.current) {
       spin.current.rotation.y = THREE.MathUtils.damp(
@@ -187,10 +204,10 @@ export function VillaModel({
       g.scale.setScalar(sc);
 
       const lock = smoothstep(0.78, 1, local);
-      lineMat.opacity = 0.1 + local * 0.72 + lock * 0.16;
+      lineMat.opacity = (0.1 + local * 0.72 + lock * 0.16) * fade;
       cTmp.copy(baseCol).lerp(CYAN_HOT, lock);
       lineMat.color.copy(cTmp);
-      fillMat.opacity = 0.05 + local * 0.34;
+      fillMat.opacity = (0.05 + local * 0.34) * fade;
     }
     void qT;
   });

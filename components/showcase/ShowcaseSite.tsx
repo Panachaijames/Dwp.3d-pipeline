@@ -17,24 +17,27 @@ import {
   DimensionTicks,
   ReferenceDots,
 } from "@/components/showcase/variants/HouseBlueprint";
+import { FloorPlan } from "@/components/showcase/FloorPlan";
+import { Room } from "@/components/showcase/Room";
 import { FurnitureStage } from "@/components/showcase/Furniture";
 import { RealVilla } from "@/components/showcase/RealVilla";
 
 const FONT = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-const SZ = -20; // showroom / finale stage z
+const SZ = -20; // floor-plan / room / finale stage z
+const PLAN_Y = -1.5; // floor plan lies just below floor level
 
 type Key = { p: number; pos: [number, number, number]; look: [number, number, number] };
 const KEYS: Key[] = [
-  { p: 0.0, pos: [0, 1.8, 10.0], look: [0, 0.2, 0] }, // villa reveal
-  { p: 0.1, pos: [0.3, 0.7, 8.2], look: [0, 0.1, 0] }, // villa settled
-  { p: 0.22, pos: [5.5, 1.1, 5.5], look: [0, 0.3, 0] }, // villa 3/4
-  { p: 0.34, pos: [-4.6, -0.2, 6.6], look: [0, 0.3, 0] }, // villa hero
-  { p: 0.43, pos: [0, 0.8, 1.6], look: [0, 0.3, -10] }, // turn down corridor
-  { p: 0.5, pos: [0, 0.5, SZ + 4.6], look: [0, 0.1, SZ] }, // chair
-  { p: 0.62, pos: [2.7, 0.4, SZ + 4.4], look: [0, 0.1, SZ] }, // sofa
-  { p: 0.74, pos: [-2.3, 0.6, SZ + 4.6], look: [0, 0.1, SZ] }, // table
-  { p: 0.87, pos: [0, 0.8, SZ + 8.5], look: [0, -0.1, SZ] }, // cloud re-forming the villa
-  { p: 1.0, pos: [0, 1.4, SZ + 10.2], look: [0, -0.1, SZ] }, // realistic colored villa hero
+  { p: 0.0, pos: [0, 1.8, 10.0], look: [0, 0.2, 0] }, // villa reveal (far)
+  { p: 0.11, pos: [5.2, 1.1, 5.2], look: [0, 0.3, 0] }, // villa 3/4
+  { p: 0.22, pos: [-4.3, -0.1, 6.0], look: [0, 0.3, 0] }, // villa hero
+  { p: 0.34, pos: [0, 15, SZ + 0.6], look: [-0.3, PLAN_Y, SZ - 0.3] }, // floor plan — top-down
+  { p: 0.46, pos: [-1.5, 5.5, SZ + 3.5], look: [-1.8, -0.8, SZ - 1.5] }, // descend toward the living room
+  { p: 0.56, pos: [0, 0.2, SZ + 6.5], look: [0, -0.2, SZ + 2.5] }, // in room — chair floats in
+  { p: 0.68, pos: [0.7, 0.1, SZ + 6.8], look: [0, -0.2, SZ + 2.5] }, // sofa
+  { p: 0.8, pos: [-0.7, 0.2, SZ + 6.6], look: [0, -0.2, SZ + 2.5] }, // table
+  { p: 0.9, pos: [0, 0.9, SZ + 9.0], look: [0, -0.1, SZ] }, // pull back, villa forming
+  { p: 1.0, pos: [0, 1.4, SZ + 10.5], look: [0, -0.1, SZ] }, // realistic colored villa hero
 ];
 
 function smoothstep(e0: number, e1: number, x: number) {
@@ -80,7 +83,7 @@ function BackgroundFade() {
   const dusk = useMemo(() => new THREE.Color("#21304a"), []);
   const c = useMemo(() => new THREE.Color(), []);
   useFrame(() => {
-    const m = smoothstep(0.86, 1.0, scroll.offset);
+    const m = smoothstep(0.9, 1.0, scroll.offset);
     c.copy(navy).lerp(dusk, m);
     const bg = scene.background as THREE.Color | null;
     if (bg && (bg as THREE.Color).isColor) bg.copy(c);
@@ -94,16 +97,33 @@ function Scene() {
   return (
     <>
       <color attach="background" args={["#070f1f"]} />
-      <fog attach="fog" args={["#081326", 14, 42]} />
+      <fog attach="fog" args={["#081326", 14, 48]} />
       <ambientLight intensity={0.6} />
 
-      <VillaModel assembleStart={0} assembleEnd={0.1} scrollSpin={0} idleSpin={0.025} />
+      {/* the blueprint villa assembles, then dissolves before the plan */}
+      <VillaModel
+        assembleStart={0}
+        assembleEnd={0.1}
+        scrollSpin={0}
+        idleSpin={0.025}
+        fadeStart={0.24}
+        fadeEnd={0.31}
+      />
       <PlanGrid />
       <DimensionTicks />
       <ReferenceDots />
 
+      {/* a real top-down floor plan, then the camera descends into the living room */}
+      <FloorPlan position={[0, PLAN_Y, SZ]} appearStart={0.28} appearEnd={0.34} fadeStart={0.48} fadeEnd={0.54} />
+
+      {/* the room backdrop the furniture floats in front of */}
+      <Room position={[0, 0, SZ]} appearStart={0.5} appearEnd={0.56} fadeStart={0.87} fadeEnd={0.91} />
+
+      {/* each piece floats in individually: chair → sofa → table */}
       <FurnitureStage position={[0, 0, SZ]} />
-      <RealVilla position={[0, 0, SZ]} assembleStart={0.8} assembleEnd={0.98} />
+
+      {/* finale: the opening villa, now solid + colored, assembles from falling parts */}
+      <RealVilla position={[0, 0, SZ]} assembleStart={0.89} assembleEnd={0.995} />
 
       <BackgroundFade />
       <CameraDirector />
@@ -148,15 +168,27 @@ function Overlay() {
       </section>
 
       <section style={sec({ alignItems: "flex-end", textAlign: "right" })}>
-        <p style={kicker}>02 · Realize</p>
-        <h2 style={h2}>From blueprint to building.</h2>
-        <p style={{ ...sub, marginLeft: "auto" }}>The structure resolved — now we bring the inside to life.</p>
+        <p style={kicker}>The design</p>
+        <h2 style={h2}>A modern villa, resolved.</h2>
+        <p style={{ ...sub, marginLeft: "auto" }}>Two offset volumes, a floating roof, glazing and pilotis — fixed in plan.</p>
+      </section>
+
+      <section style={sec({ alignItems: "flex-start" })}>
+        <p style={kicker}>02 · The plan</p>
+        <h2 style={h2}>Every room, in its place.</h2>
+        <p style={sub}>From the survey grid to a measured floor plan — then down, into the living room.</p>
+      </section>
+
+      <section style={sec({ alignItems: "flex-end", textAlign: "right" })}>
+        <p style={kicker}>03 · Realize</p>
+        <h2 style={h2}>Step inside.</h2>
+        <p style={{ ...sub, marginLeft: "auto" }}>The room takes shape — and its pieces arrive, one by one.</p>
       </section>
 
       <section style={sec({ alignItems: "flex-start" })}>
         <p style={kicker}>Interiors · Seating</p>
         <h2 style={h2}>The chair.</h2>
-        <p style={sub}>Ergonomics and proportion, resolved in 3D long before a single piece is cut.</p>
+        <p style={sub}>Ergonomics and proportion, resolved in 3D long before a piece is cut.</p>
       </section>
 
       <section style={sec({ alignItems: "flex-end", textAlign: "right" })}>
@@ -169,12 +201,6 @@ function Overlay() {
         <p style={kicker}>Interiors · Surfaces</p>
         <h2 style={h2}>The table.</h2>
         <p style={sub}>Where the room comes together — and where the day happens.</p>
-      </section>
-
-      <section style={sec({ alignItems: "center", textAlign: "center" })}>
-        <p style={kicker}>And then —</p>
-        <h2 style={h2}>It comes together — in colour.</h2>
-        <p style={{ ...sub, maxWidth: 520, textAlign: "center" }}>Piece by piece, the home falls into place.</p>
       </section>
 
       <section style={sec({ alignItems: "center", textAlign: "center" })}>
@@ -206,7 +232,7 @@ export default function ShowcaseSite() {
       }}
       style={{ width: "100%", height: "100%" }}
     >
-      <ScrollControls pages={8} damping={0.35}>
+      <ScrollControls pages={9} damping={0.3}>
         <Scene />
         <Overlay />
       </ScrollControls>
