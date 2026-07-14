@@ -3,10 +3,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth, UserRole } from '../../contexts/AuthContext';
-import { Shield, Trash2, UserPlus, Check, AlertCircle, X, Folder, UploadCloud } from 'lucide-react';
+import { Shield, Trash2, UserPlus, Check, AlertCircle, X, Folder, UploadCloud, Activity } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { DriveUploader } from '../features/DriveUploader';
 import { ResourceViewer } from '../features/ResourceViewer';
+import { isSettingsAdmin } from '../../lib/access';
+import { UsageDashboard } from './UsageDashboard';
 
 interface UserRoleData {
     email: string;
@@ -24,7 +26,9 @@ export const SettingsPortal: React.FC = () => {
     const [draftRoles, setDraftRoles] = useState<Record<string, UserRole>>({});
     const [savingEmail, setSavingEmail] = useState<string | null>(null);
 
-    const isLeader = user?.role === 'leader';
+    // Settings is restricted to a hard email allowlist (see lib/access.ts),
+    // not the general 'leader' role.
+    const isLeader = isSettingsAdmin(user?.email);
 
     useEffect(() => {
         if (isLeader) {
@@ -131,7 +135,7 @@ export const SettingsPortal: React.FC = () => {
         }
     };
 
-    const [activeTab, setActiveTab] = useState<'users' | 'projects'>('users');
+    const [activeTab, setActiveTab] = useState<'users' | 'projects' | 'usage'>('users');
     const [projects, setProjects] = useState<any[]>([]);
     const [newProjectName, setNewProjectName] = useState('');
     const [loadingProjects, setLoadingProjects] = useState(false);
@@ -326,10 +330,17 @@ export const SettingsPortal: React.FC = () => {
                     >
                         Outsource Projects
                     </button>
+                    <button
+                        onClick={() => setActiveTab('usage')}
+                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'usage' ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow' : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300'}`}
+                    >
+                        <Activity size={14} />
+                        Usage Logs
+                    </button>
                 </div>
             </div>
 
-            {activeTab === 'users' ? (
+            {activeTab === 'users' && (
                 <>
                     {/* Add User Section */}
                     <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 mb-8">
@@ -454,7 +465,11 @@ export const SettingsPortal: React.FC = () => {
                         )}
                     </div>
                 </>
-            ) : (
+            )}
+
+            {activeTab === 'usage' && <UsageDashboard />}
+
+            {activeTab === 'projects' && (
                 /* Projects Tab */
                 <div className="space-y-6">
                     <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6">

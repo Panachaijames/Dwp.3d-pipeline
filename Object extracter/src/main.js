@@ -27,6 +27,7 @@ document.querySelector('#app').innerHTML = `
             <div id="imageWrapper" class="image-wrapper hidden">
               <img id="previewImg" src="" alt="Preview">
               <canvas id="maskCanvas" class="mask-canvas"></canvas>
+              <div id="scanLine" class="scan-line hidden"></div>
             </div>
           </div>
 
@@ -34,6 +35,47 @@ document.querySelector('#app').innerHTML = `
           <div class="controls-stack">
             <input type="text" id="promptInput" class="input-field"
               placeholder="What is the object? (e.g., 'chair')">
+
+            <div class="view-selection-container">
+              <span class="view-section-label">Target Perspectives</span>
+              <div class="view-selector-grid">
+                <label class="view-card checked" id="viewCardFront">
+                  <input type="checkbox" id="viewFront" checked class="hidden-checkbox">
+                  <div class="view-card-content">
+                    <span class="view-checkbox-custom"></span>
+                    <span class="view-title">Front View</span>
+                  </div>
+                </label>
+                <label class="view-card checked" id="viewCardSide">
+                  <input type="checkbox" id="viewSide" checked class="hidden-checkbox">
+                  <div class="view-card-content">
+                    <span class="view-checkbox-custom"></span>
+                    <span class="view-title">Side Profile</span>
+                  </div>
+                </label>
+                <label class="view-card checked" id="viewCardBack">
+                  <input type="checkbox" id="viewBack" checked class="hidden-checkbox">
+                  <div class="view-card-content">
+                    <span class="view-checkbox-custom"></span>
+                    <span class="view-title">3/4 Back</span>
+                  </div>
+                </label>
+                <label class="view-card checked" id="viewCardIso">
+                  <input type="checkbox" id="viewIso" checked class="hidden-checkbox">
+                  <div class="view-card-content">
+                    <span class="view-checkbox-custom"></span>
+                    <span class="view-title">Isometric</span>
+                  </div>
+                </label>
+                <label class="view-card checked" id="viewCardTop">
+                  <input type="checkbox" id="viewTop" checked class="hidden-checkbox">
+                  <div class="view-card-content">
+                    <span class="view-checkbox-custom"></span>
+                    <span class="view-title">Top View</span>
+                  </div>
+                </label>
+              </div>
+            </div>
 
             <input type="text" id="customPromptInput" class="input-field input-field-sm"
               placeholder="Custom views/styles (e.g., 'front view, side view') [Optional]">
@@ -54,23 +96,62 @@ document.querySelector('#app').innerHTML = `
             </div>
 
             <div class="dimensions-section">
-              <div class="dimensions-header">
-                <span>Dimensions (Optional)</span>
-                <select id="unitSelect" class="unit-select">
-                  <option value="in">in</option>
-                  <option value="cm">cm</option>
-                  <option value="mm">mm</option>
-                  <option value="ft">ft</option>
-                  <option value="m">m</option>
-                </select>
+              <div class="dimensions-left">
+                <div class="dimensions-header">
+                  <span>Dimensions (Optional)</span>
+                  <select id="unitSelect" class="unit-select">
+                    <option value="in">in</option>
+                    <option value="cm">cm</option>
+                    <option value="mm">mm</option>
+                    <option value="ft">ft</option>
+                    <option value="m">m</option>
+                  </select>
+                </div>
+                <div class="dimensions-grid">
+                  <input type="number" id="dimHeight" class="input-field input-field-sm" placeholder="Height" min="0" step="any">
+                  <input type="number" id="dimWidth" class="input-field input-field-sm" placeholder="Width" min="0" step="any">
+                  <input type="number" id="dimDepth" class="input-field input-field-sm" placeholder="Depth" min="0" step="any">
+                </div>
               </div>
-              <div class="dimensions-grid">
-                <input type="number" id="dimHeight" class="input-field input-field-sm" placeholder="Height" min="0" step="any">
-                <input type="number" id="dimWidth" class="input-field input-field-sm" placeholder="Width" min="0" step="any">
-                <input type="number" id="dimDepth" class="input-field input-field-sm" placeholder="Depth" min="0" step="any">
+              <div class="dimensions-right">
+                <svg id="dimensionCube" viewBox="0 0 120 120" class="dimension-cube">
+                  <defs>
+                    <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                      <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+                    </marker>
+                  </defs>
+                  
+                  <!-- Cube Wireframe -->
+                  <g stroke="rgba(255, 255, 255, 0.15)" stroke-width="1.2" fill="none">
+                    <!-- Back edges (dotted) -->
+                    <path d="M15,55 L50,35 L85,55" stroke-dasharray="2 2" />
+                    <path d="M50,35 L50,75" stroke-dasharray="2 2" />
+                    
+                    <!-- Front faces -->
+                    <polygon points="50,95 15,75 15,30 50,50" />
+                    <polygon points="50,95 85,75 85,30 50,50" />
+                    <polygon points="50,50 15,30 50,10 85,30" />
+                  </g>
+                  
+                  <!-- Dimension Helper Lines -->
+                  <g id="helperWidth" class="cube-helper" stroke="#555" stroke-width="1.2" fill="none">
+                    <path d="M15,83 L50,103" marker-start="url(#arrow)" marker-end="url(#arrow)" />
+                    <text x="32" y="99" fill="currentColor" font-size="8" text-anchor="middle" font-family="monospace">W</text>
+                  </g>
+                  
+                  <g id="helperDepth" class="cube-helper" stroke="#555" stroke-width="1.2" fill="none">
+                    <path d="M85,83 L50,103" marker-start="url(#arrow)" marker-end="url(#arrow)" />
+                    <text x="68" y="99" fill="currentColor" font-size="8" text-anchor="middle" font-family="monospace">D</text>
+                  </g>
+                  
+                  <g id="helperHeight" class="cube-helper" stroke="#555" stroke-width="1.2" fill="none">
+                    <path d="M7,75 L7,30" marker-start="url(#arrow)" marker-end="url(#arrow)" />
+                    <text x="3" y="55" fill="currentColor" font-size="8" text-anchor="middle" font-family="monospace">H</text>
+                  </g>
+                </svg>
               </div>
-              <div class="dimensions-hint">The AI draws dimension lines and your exact values into each result. To change values, edit the fields and click Extract again.</div>
             </div>
+            <div class="dimensions-hint">The AI draws dimension lines and your exact values into each result. To change values, edit the fields and click Extract again.</div>
 
             <button id="extractBtn" class="btn btn-primary">
               Extract Object Views
@@ -121,8 +202,12 @@ document.querySelector('#app').innerHTML = `
             Isolated object views will appear here...
           </div>
           <div id="loadingIndicator" class="loading-overlay hidden">
-            <div class="loader"></div>
+            <div class="scanner-container">
+              <div class="scanner-grid"></div>
+              <div class="scanner-laser"></div>
+            </div>
             <span class="loading-text">Analyzing mask and rendering views...</span>
+            <div class="loading-subtext">Executing Gemini API Perspective Extractions</div>
           </div>
           <div id="resultsGallery" class="results-grid"></div>
         </div>
@@ -147,6 +232,89 @@ document.querySelector('#app').innerHTML = `
           <div class="lightbox-image-container">
             <img id="lightboxImg" src="" draggable="false" alt="Source">
             <canvas id="drawingCanvas" class="drawing-canvas"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Spec Inspector Modal -->
+    <div id="inspectorModal" class="lightbox-overlay hidden">
+      <div class="lightbox-backdrop" id="inspectorBackdrop"></div>
+      <div class="inspector-container">
+        <div class="inspector-header">
+          <div>
+            <h3 id="inspectorTitle">Object Specification Sheet</h3>
+            <p id="inspectorSubtitle">Technical View & AI Analysis</p>
+          </div>
+          <button id="closeInspectorBtn" class="btn-close-inspector">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="20" height="20">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        
+        <div class="inspector-body">
+          <div class="inspector-left">
+            <div class="inspector-image-wrapper">
+              <img id="inspectorImg" src="" alt="Isolated Object View">
+            </div>
+            <div class="inspector-image-actions">
+              <button id="inspectorDownloadBtn" class="btn btn-primary btn-sm">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download View (PNG)
+              </button>
+            </div>
+          </div>
+          
+          <div class="inspector-right">
+            <div class="spec-section">
+              <div class="spec-section-title">Object Metadata</div>
+              <div class="spec-grid">
+                <div class="spec-item">
+                  <span class="spec-label">Name</span>
+                  <span id="specName" class="spec-value">-</span>
+                </div>
+                <div class="spec-item">
+                  <span class="spec-label">Category</span>
+                  <span id="specCategory" class="spec-value">-</span>
+                </div>
+                <div class="spec-item">
+                  <span class="spec-label">Style / Era</span>
+                  <span id="specEra" class="spec-value">-</span>
+                </div>
+                <div class="spec-item">
+                  <span class="spec-label">Confidence</span>
+                  <span id="specConfidence" class="spec-value">-</span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="spec-section">
+              <div class="spec-section-title">Materials & Textures</div>
+              <div id="specMaterials" class="spec-tags">-</div>
+            </div>
+            
+            <div class="spec-section">
+              <div class="spec-section-title">Detected Colors</div>
+              <div id="specColors" class="spec-color-row">-</div>
+            </div>
+            
+            <div class="spec-section">
+              <div class="spec-section-title">Key Features</div>
+              <ul id="specFeatures" class="spec-feature-list"></ul>
+            </div>
+            
+            <div class="spec-section">
+              <div class="spec-section-title">Original Environment Context</div>
+              <p id="specContext" class="spec-text">-</p>
+            </div>
+            
+            <div class="spec-section">
+              <div class="spec-section-title">Original Lighting</div>
+              <p id="specLighting" class="spec-text">-</p>
+            </div>
           </div>
         </div>
       </div>
@@ -206,6 +374,12 @@ const toggleLoading = (isLoading) => {
   extractBtn.disabled = isLoading;
   startOverBtn.disabled = isLoading;
   loadingIndicator.classList.toggle('hidden', !isLoading);
+  
+  const scanLine = $('scanLine');
+  if (scanLine) {
+    scanLine.classList.toggle('hidden', !isLoading);
+  }
+  
   if (isLoading) waitingPlaceholder.classList.add('hidden');
 };
 
@@ -413,6 +587,19 @@ startOverBtn.onclick = () => {
   statusMessage.classList.add('hidden');
   startOverBtn.classList.add('hidden');
   drawMask();
+
+  // Reset checkboxes
+  ['Front', 'Side', 'Back', 'Iso', 'Top'].forEach(id => {
+    const cb = $(`view${id}`);
+    const card = $(`viewCard${id}`);
+    if (cb && card) {
+      cb.checked = true;
+      card.classList.add('checked');
+    }
+  });
+
+  // Hide modal
+  closeInspector();
 };
 
 clearResultsBtn.onclick = () => {
@@ -432,15 +619,103 @@ const getCurrentDims = () => ({
   unit: unitSelect.value || 'in',
 });
 
+// ===== SPEC INSPECTOR MODAL LOGIC =====
+const openInspector = (base64Data, metadata, viewAngle) => {
+  $('inspectorImg').src = `data:image/png;base64,${base64Data}`;
+  
+  const objectName = metadata?.specific_object_name || metadata?.object_name || promptInput.value || 'Isolated Object';
+  $('inspectorTitle').textContent = objectName;
+  $('inspectorSubtitle').textContent = `Perspective view: ${viewAngle}`;
+  
+  // Specs table
+  $('specName').textContent = metadata?.specific_object_name || promptInput.value || 'N/A';
+  $('specCategory').textContent = metadata?.object_category || 'N/A';
+  $('specEra').textContent = metadata?.style_design_era || 'N/A';
+  $('specConfidence').textContent = metadata?.confidence_score ? `${(metadata.confidence_score * 100).toFixed(0)}%` : '95%';
+  
+  // Materials tags
+  const matContainer = $('specMaterials');
+  matContainer.innerHTML = '';
+  const materials = metadata?.materials_and_textures || [];
+  if (materials.length > 0) {
+    materials.forEach(m => {
+      const span = document.createElement('span');
+      span.className = 'spec-tag';
+      span.textContent = m;
+      matContainer.appendChild(span);
+    });
+  } else {
+    matContainer.textContent = 'N/A';
+  }
+  
+  // Colors swatches
+  const colContainer = $('specColors');
+  colContainer.innerHTML = '';
+  const colors = metadata?.primary_colors || [];
+  if (colors.length > 0) {
+    colors.forEach(c => {
+      const pill = document.createElement('div');
+      pill.className = 'spec-color-pill';
+      
+      const swatch = document.createElement('span');
+      swatch.className = 'spec-color-swatch';
+      swatch.style.backgroundColor = c.toLowerCase();
+      
+      const name = document.createElement('span');
+      name.className = 'spec-color-name';
+      name.textContent = c;
+      
+      pill.appendChild(swatch);
+      pill.appendChild(name);
+      colContainer.appendChild(pill);
+    });
+  } else {
+    colContainer.textContent = 'N/A';
+  }
+  
+  // Features list
+  const featContainer = $('specFeatures');
+  featContainer.innerHTML = '';
+  const features = metadata?.key_features || [];
+  if (features.length > 0) {
+    features.forEach(f => {
+      const li = document.createElement('li');
+      li.textContent = f;
+      featContainer.appendChild(li);
+    });
+  } else {
+    featContainer.innerHTML = '<li>No key features extracted</li>';
+  }
+  
+  // Context details
+  $('specContext').textContent = metadata?.original_environment_context || 'N/A';
+  $('specLighting').textContent = metadata?.lighting_and_shadows || 'N/A';
+  
+  // Single download
+  $('inspectorDownloadBtn').onclick = () => {
+    const link = document.createElement('a');
+    link.href = `data:image/png;base64,${base64Data}`;
+    link.download = `${objectName.replace(/\s+/g, '_')}_${viewAngle.replace(/\s+/g, '_')}.png`;
+    link.click();
+  };
+  
+  $('inspectorModal').classList.remove('hidden');
+};
+
+const closeInspector = () => {
+  $('inspectorModal').classList.add('hidden');
+};
+
+$('closeInspectorBtn').onclick = closeInspector;
+$('inspectorBackdrop').onclick = closeInspector;
+
 // ===== RESULT GALLERY =====
-// The AI bakes dimension annotations into the image, so the result card just displays
-// the PNG as-is. No client-side overlay, no bbox detection, no live updates.
 const addResultToGallery = (base64Data, metadata, viewAngle = '') => {
   const objectName = metadata?.specific_object_name || metadata?.object_name || promptInput.value || 'Isolated_Object';
   const labelName = viewAngle || objectName;
   const fileName = `${objectName.replace(/\s+/g, '_')}_${viewAngle ? viewAngle.replace(/\s+/g, '_') : 'view'}_${extractedImages.length + 1}`;
 
-  const entry = { data: base64Data, name: `${fileName}.png` };
+  const entry = { data: base64Data, name: `${fileName}.png`, metadata, viewAngle };
   extractedImages.unshift(entry);
 
   const imgSrc = `data:image/png;base64,${base64Data}`;
@@ -452,8 +727,7 @@ const addResultToGallery = (base64Data, metadata, viewAngle = '') => {
     <div class="result-card-label">${labelName}</div>
   `;
   div.addEventListener('click', () => {
-    const newTab = window.open();
-    newTab.document.body.innerHTML = `<style>body{margin:0;background:#0a0a0a;display:flex;align-items:center;justify-content:center;height:100vh}img{max-width:100%;max-height:100vh;background:#171717;padding:20px;border-radius:8px}</style><img src="${imgSrc}">`;
+    openInspector(base64Data, metadata, viewAngle);
   });
 
   resultsGallery.prepend(div);
@@ -482,8 +756,57 @@ downloadBtn.onclick = async () => {
 extractBtn.onclick = async () => {
   if (!base64Image) return showStatus('Please provide an image.', true);
 
+  // Build views dynamically based on user selections
+  const views = [];
+  if ($('viewFront').checked) {
+    views.push({
+      id: 'Front View',
+      instruction: 'Render the object as a STRAIGHT-ON FRONT VIEW (camera positioned dead-center in front of the object, perpendicular to its front face, at eye level). Only the FRONT face should be visible; the sides and back should NOT be visible. This is a clean head-on product shot.',
+    });
+  }
+  if ($('viewSide').checked) {
+    views.push({
+      id: 'Side Profile',
+      instruction: 'Render the object as a PURE 90° SIDE PROFILE (camera positioned directly to the RIGHT side of the object, perpendicular to its front). Only ONE SIDE should be visible; the front and back should NOT be visible. This MUST be a clean side silhouette, completely different from the front view.',
+    });
+  }
+  if ($('viewBack').checked) {
+    views.push({
+      id: '3/4 Back View',
+      instruction: 'Render the object ROTATED so the camera sees it from a 3/4 BACK-RIGHT angle (camera positioned roughly 150° from dead-center front — behind and to the right of the object, at eye level). The BACK and the RIGHT side must be the dominant visible surfaces. This view MUST show the object from behind, not from the front.',
+    });
+  }
+  if ($('viewIso').checked) {
+    views.push({
+      id: 'Isometric View',
+      instruction: 'Render the object as a TRUE ISOMETRIC VIEW (camera positioned at a 45° horizontal angle and tilted ~30° downward from above, so the FRONT, RIGHT SIDE, and TOP faces are ALL visible simultaneously with equal visual weight). Use parallel projection with no perspective foreshortening — all three axes should appear equally foreshortened, exactly like a classic isometric technical/CAD rendering. The three visible faces must be clearly distinguishable.',
+    });
+  }
+  if ($('viewTop').checked) {
+    views.push({
+      id: 'Top View',
+      instruction: 'Render the object as a STRAIGHT-DOWN TOP VIEW / BIRD\'S-EYE VIEW (camera positioned directly ABOVE the object, looking straight down, perpendicular to the ground plane). Only the TOP face should be visible; the front, sides, and back must NOT be visible. This is a clean orthographic plan view / floor-plan-style shot of the object from above.',
+    });
+  }
+
+  // Add custom view instruction if provided
+  const customInputVal = customPromptInput.value.trim();
+  if (customInputVal) {
+    const customList = customInputVal.split(',').map((s) => s.trim()).filter((s) => s);
+    customList.forEach((v) => {
+      views.push({
+        id: v.length > 25 ? v.substring(0, 25) + '...' : v,
+        instruction: `Generate a realistic view of the isolated object focusing exactly on this perspective, style, or instruction: "${v}".`,
+      });
+    });
+  }
+
+  if (views.length === 0) {
+    return showStatus('Please select at least one perspective view or input a custom view instruction.', true);
+  }
+
   toggleLoading(true);
-  showStatus('Applying mask and generating multiple perspective views...');
+  showStatus('Applying mask and generating selected perspective views...');
 
   // Build masked image
   let imageToSend = base64Image;
@@ -509,35 +832,6 @@ extractBtn.onclick = async () => {
     tCtx.clip();
     tCtx.drawImage(imgEl, 0, 0);
     imageToSend = tempCanvas.toDataURL('image/png').split(',')[1];
-  }
-
-  // Build views
-  let views = [];
-  const customInputVal = customPromptInput.value.trim();
-  if (customInputVal) {
-    const customList = customInputVal.split(',').map((s) => s.trim()).filter((s) => s);
-    views = customList.map((v) => ({
-      id: v.length > 25 ? v.substring(0, 25) + '...' : v,
-      instruction: `Generate a realistic view of the isolated object focusing exactly on this perspective, style, or instruction: "${v}".`,
-    }));
-  } else {
-    views = [
-      {
-        id: 'Front View',
-        instruction:
-          'Render the object as a STRAIGHT-ON FRONT VIEW (camera positioned dead-center in front of the object, perpendicular to its front face, at eye level). Only the FRONT face should be visible; the sides and back should NOT be visible. This is a clean head-on product shot.',
-      },
-      {
-        id: 'Side Profile',
-        instruction:
-          'Render the object as a PURE 90° SIDE PROFILE (camera positioned directly to the RIGHT side of the object, perpendicular to its front). Only ONE SIDE should be visible; the front and back should NOT be visible. This MUST be a clean side silhouette, completely different from the front view.',
-      },
-      {
-        id: '3/4 Back View',
-        instruction:
-          'Render the object ROTATED so the camera sees it from a 3/4 BACK-RIGHT angle (camera positioned roughly 150° from dead-center front — behind and to the right of the object, at eye level). The BACK and the RIGHT side must be the dominant visible surfaces. This view MUST show the object from behind, not from the front.',
-      },
-    ];
   }
 
   const dims = getCurrentDims();
@@ -616,3 +910,39 @@ extractBtn.onclick = async () => {
 
 promptInput.onkeydown = (e) => { if (e.key === 'Enter') extractBtn.click(); };
 customPromptInput.onkeydown = (e) => { if (e.key === 'Enter') extractBtn.click(); };
+
+// ===== WIRE UP CUBE AND VIEW CARDS INTERACTION =====
+const highlightAxis = (axis, active) => {
+  const helper = $(`helper${axis}`);
+  if (helper) {
+    if (active) {
+      helper.classList.add('active');
+    } else {
+      helper.classList.remove('active');
+    }
+  }
+};
+
+['Height', 'Width', 'Depth'].forEach(axis => {
+  const inputEl = $(`dim${axis}`);
+  if (inputEl) {
+    inputEl.addEventListener('focus', () => highlightAxis(axis, true));
+    inputEl.addEventListener('blur', () => highlightAxis(axis, false));
+    inputEl.addEventListener('mouseenter', () => highlightAxis(axis, true));
+    inputEl.addEventListener('mouseleave', () => {
+      if (document.activeElement !== inputEl) {
+        highlightAxis(axis, false);
+      }
+    });
+  }
+});
+
+['Front', 'Side', 'Back', 'Iso', 'Top'].forEach(id => {
+  const cb = $(`view${id}`);
+  const card = $(`viewCard${id}`);
+  if (cb && card) {
+    cb.addEventListener('change', () => {
+      card.classList.toggle('checked', cb.checked);
+    });
+  }
+});

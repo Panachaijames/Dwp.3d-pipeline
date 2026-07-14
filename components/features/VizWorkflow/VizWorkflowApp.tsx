@@ -13,6 +13,8 @@ import { inferPhaseKey, readText, slugify } from './projectCatalog';
 import './vizworkflow.css';
 import { supabase } from '@/services/supabaseClient';
 import { buildSSOUrl, openWithSSO } from '@/utils/sso';
+import { logUsage } from '@/services/usageLogger';
+import { isSettingsAdmin } from '@/lib/access';
 
 import nextDynamic from 'next/dynamic';
 
@@ -33,6 +35,7 @@ const ReferenceTab = nextDynamic(() => import('./ReferenceTab'), { ssr: false })
 const ScheduleTab = nextDynamic(() => import('./ScheduleTab'), { ssr: false });
 const RenderWorkspace = nextDynamic(() => import('./RenderWorkspace'), { ssr: false });
 const PromptGenWorkspace = nextDynamic(() => import('./PromptGenWorkspace'), { ssr: false });
+const ScheduleAssistant = nextDynamic(() => import('./ScheduleAssistant'), { ssr: false });
 
 const PdfLibrary = nextDynamic(() => import('../PdfLibrary/PdfLibrary').then(mod => mod.PdfLibrary), { 
     ssr: false,
@@ -220,6 +223,7 @@ export default function VizWorkflowApp({ initialTab }: { initialTab?: string } =
     // Sync tab → URL
     const changeTab = useCallback((newTab: string) => {
         setTab(newTab);
+        logUsage({ eventType: 'page_view', feature: newTab });
         const targetPath = TAB_ROUTES[newTab] || '/';
         if (typeof window !== 'undefined' && window.location.pathname !== targetPath) {
             window.history.replaceState(null, '', targetPath);
@@ -316,6 +320,12 @@ export default function VizWorkflowApp({ initialTab }: { initialTab?: string } =
         }
     }, [projects, proj?.id, proj?.catalogKey]);
     useEffect(() => { if (proj) setViewPhase(proj.phase); }, [proj?.id]);
+
+    // Log the initial feature/tab opened when the app shell mounts.
+    useEffect(() => {
+        logUsage({ eventType: 'page_view', feature: tab, detail: { initial: true } });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const activePhase = viewPhase || (proj ? proj.phase : "BSA");
     const isLocked = false; // All phases unlocked
@@ -499,9 +509,12 @@ export default function VizWorkflowApp({ initialTab }: { initialTab?: string } =
         { k: "reference", ic: "◆", lb: "Reference" },
         { k: "objectExtractor", ic: "✂", lb: "Object Extractor" },
     ];
-    const TOOL_ITEMS = user?.role === 'leader'
-        ? [...TOOL_ITEMS_BASE, { k: "schedule", ic: "📅", lb: "3D Schedule" }, { k: "settings", ic: "⚙", lb: "Settings" }]
-        : TOOL_ITEMS_BASE;
+    const canViewSettings = isSettingsAdmin(user?.email);
+    const TOOL_ITEMS = [
+        ...TOOL_ITEMS_BASE,
+        ...(user?.role === 'leader' ? [{ k: "schedule", ic: "📅", lb: "3D Schedule" }] : []),
+        ...(canViewSettings ? [{ k: "settings", ic: "⚙", lb: "Settings" }] : []),
+    ];
 
     const renderNavSection = (items: { k: string; ic: string; lb: string }[]) =>
         items.map(n => (
@@ -671,7 +684,7 @@ export default function VizWorkflowApp({ initialTab }: { initialTab?: string } =
                 {tab === "reference" && <ReferenceTab />}
                 {tab === "objectExtractor" && <ObjectExtractorTab />}
                 {tab === "schedule" && user?.role === 'leader' && <ScheduleTab rawRequests={rawRequests} setRawRequests={setRawRequests} />}
-                {tab === "settings" && <div className="p-8 h-full overflow-y-auto w-full"><SettingsPortal /></div>}
+                {tab === "settings" && canViewSettings && <div className="p-8 h-full overflow-y-auto w-full"><SettingsPortal /></div>}
             </div>
 
             {/* FEEDBACK BUTTON */}
@@ -684,6 +697,9 @@ export default function VizWorkflowApp({ initialTab }: { initialTab?: string } =
             >
                 <MessageSquare size={24} color="white" />
             </a>
+
+            {/* SCHEDULE ASSISTANT (AI availability chat) */}
+            {user && <ScheduleAssistant rawRequests={rawRequests} />}
 
             {/* NOTICES & MODALS */}
             {notice && <div className="vw-notice">{notice}</div>}

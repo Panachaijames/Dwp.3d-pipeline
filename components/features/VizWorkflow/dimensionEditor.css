@@ -1,0 +1,460 @@
+/* Dimension Editor — full-screen modal for placing dimension arrows */
+
+.de-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    padding: 0;
+    background: rgba(0, 0, 0, .92);
+    backdrop-filter: blur(10px);
+    animation: de-fade .15s ease-out;
+    font-family: var(--f);
+}
+
+@keyframes de-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.de-shell {
+    background: var(--bg);
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ----- Top bar ----- */
+.de-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 22px;
+    border-bottom: 1px solid var(--bdr);
+    background: var(--bg2);
+    flex-shrink: 0;
+}
+
+.de-topbar-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.de-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    border-radius: 7px;
+    background: var(--card);
+    border: 1px solid var(--bdr);
+    color: var(--tx);
+    font-family: var(--f);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .15s;
+}
+
+.de-back:hover {
+    background: var(--hov);
+    border-color: var(--or);
+    color: var(--or);
+}
+
+.de-back svg {
+    color: currentColor;
+}
+
+.de-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--tx);
+    margin: 0;
+}
+
+.de-title svg {
+    color: var(--tx2);
+}
+
+.de-close {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: transparent;
+    border: none;
+    color: var(--tx3);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all .15s;
+}
+
+.de-close:hover {
+    background: var(--rdd);
+    color: #fff;
+}
+
+/* ----- Main split ----- */
+.de-main {
+    flex: 1;
+    display: flex;
+    flex-direction: row;
+    gap: 18px;
+    padding: 18px;
+    max-width: 1500px;
+    width: 100%;
+    margin: 0 auto;
+    overflow: hidden;
+}
+
+@media (max-width: 900px) {
+    .de-main {
+        flex-direction: column;
+        overflow: auto;
+    }
+}
+
+/* ----- Left panel ----- */
+.de-panel {
+    width: 320px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow-y: auto;
+    padding-right: 4px;
+    padding-bottom: 16px;
+}
+
+@media (max-width: 900px) {
+    .de-panel { width: 100%; }
+}
+
+.de-card {
+    background: var(--bg2);
+    border: 1px solid var(--bdr);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.de-card-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.4px;
+    color: var(--tx3);
+    margin: 0 0 4px;
+}
+
+/* Drop zone */
+.de-drop {
+    border: 2px dashed var(--bdr2);
+    border-radius: 10px;
+    background: var(--bg);
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
+    text-align: center;
+    transition: all .15s;
+    color: var(--tx2);
+    min-height: 110px;
+}
+
+.de-drop:hover, .de-drop.is-over {
+    border-color: var(--or);
+    background: var(--ord);
+    color: var(--tx);
+}
+
+.de-drop svg { color: var(--tx2); margin-bottom: 4px; }
+.de-drop:hover svg, .de-drop.is-over svg { color: var(--or); }
+
+.de-drop-main {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--tx);
+}
+
+.de-drop-sub {
+    font-size: 10px;
+    color: var(--tx3);
+}
+
+.de-hidden { display: none !important; }
+
+/* Field + row */
+.de-field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.de-field > label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--tx2);
+    width: 60px;
+    flex-shrink: 0;
+}
+
+.de-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.de-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.de-row > label {
+    flex: 0 0 78px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--tx2);
+}
+
+.de-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, .06);
+}
+
+.de-input {
+    flex: 1;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--inp);
+    border: 1px solid var(--bdr);
+    color: var(--tx);
+    font-size: 12px;
+    font-family: var(--f);
+    outline: none;
+    transition: border-color .15s;
+    width: 100%;
+    min-width: 0;
+}
+
+.de-input:focus { border-color: var(--or); }
+.de-input::placeholder { color: var(--tx3); }
+
+select.de-input {
+    cursor: pointer;
+}
+
+/* Divider + switch */
+.de-divider {
+    margin-top: 4px;
+    padding-top: 10px;
+    border-top: 1px solid var(--bdr);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.de-divider-label {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--tx3);
+}
+
+.de-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 11px;
+    color: var(--tx2);
+}
+
+.de-switch input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.de-switch-track {
+    width: 30px;
+    height: 16px;
+    background: var(--bdr2);
+    border-radius: 9999px;
+    position: relative;
+    transition: background .15s;
+    flex-shrink: 0;
+}
+
+.de-switch-track.on {
+    background: #a855f7;
+}
+
+.de-switch-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform .15s;
+}
+
+.de-switch-track.on .de-switch-thumb {
+    transform: translateX(14px);
+}
+
+/* Action buttons */
+.de-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.de-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-family: var(--f);
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all .15s;
+    outline: none;
+    line-height: 1;
+}
+
+.de-btn:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+}
+
+.de-btn:active:not(:disabled) {
+    transform: scale(.98);
+}
+
+.de-btn-secondary {
+    background: var(--card);
+    border-color: var(--bdr);
+    color: var(--tx);
+}
+
+.de-btn-secondary:hover:not(:disabled) {
+    background: var(--hov);
+    border-color: var(--bdr2);
+}
+
+.de-btn-primary {
+    background: var(--or);
+    color: #fff;
+    border-color: var(--or);
+    padding: 12px 14px;
+    font-weight: 700;
+}
+
+.de-btn-primary:hover:not(:disabled) {
+    background: #c95f0e;
+    border-color: #c95f0e;
+}
+
+/* ----- Right stage ----- */
+.de-stage {
+    flex: 1;
+    position: relative;
+    background: var(--bg2);
+    border: 1px solid var(--bdr);
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    min-height: 480px;
+}
+
+.de-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--tx3);
+    pointer-events: none;
+    gap: 6px;
+}
+
+.de-empty-main {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--tx2);
+    margin: 8px 0 0;
+}
+
+.de-empty-sub {
+    font-size: 11px;
+    color: var(--tx3);
+    margin: 0;
+}
+
+.de-hint {
+    position: absolute;
+    top: 18px;
+    left: 18px;
+    background: rgba(0, 0, 0, .65);
+    border: 1px solid var(--bdr);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--tx2);
+    pointer-events: none;
+    z-index: 5;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    backdrop-filter: blur(6px);
+}
+
+.de-hint svg {
+    color: var(--tx3);
+}
+
+.de-canvas {
+    max-width: 100%;
+    max-height: 78vh;
+    object-fit: contain;
+    background: transparent;
+    border-radius: 6px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, .4);
+    touch-action: none;
+    display: block;
+    transition: opacity .2s;
+}

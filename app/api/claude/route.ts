@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export const maxDuration = 60; // Set to 60 seconds to avoid 504 on large prompts
 
 const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
-const CLAUDE_MODEL = 'claude-opus-4-6';
+const CLAUDE_MODEL = 'claude-opus-4-7';
 
 export async function POST(request: NextRequest) {
     if (!CLAUDE_API_KEY) {

@@ -4,11 +4,24 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { googleLogout, useGoogleLogin } from '@react-oauth/google';
 import type { User as SupabaseAuthUser } from '@supabase/supabase-js';
 import { supabase } from '../services/supabaseClient';
+import { logUsage, setUsageActor, clearUsageActor } from '../services/usageLogger';
+import { installApiUsageInterceptor } from '../services/apiUsageInterceptor';
 
 const USER_STORAGE_KEY = 'dwp_user';
 const DRIVE_TOKEN_KEY = 'dwp_access_token';
 const DRIVE_TOKEN_EXPIRY_KEY = 'dwp_token_expiry';
 const DRIVE_TOKEN_EMAIL_KEY = 'dwp_access_token_email';
+const AUTH_EPOCH_KEY = 'dwp_auth_epoch';
+const USAGE_SESSION_KEY = 'dwp_usage_session_logged';
+
+/**
+ * Bump this number to force EVERY user to sign out once on their next load.
+ * On load, any browser whose stored epoch is below AUTH_EPOCH is signed out and
+ * shown the login screen exactly once, then updated to the current epoch.
+ * (Sessions are client-side, so this takes effect the next time each person
+ * opens or refreshes the site.)
+ */
+export const AUTH_EPOCH = 1;
 
 export type UserRole = 'leader' | 'member' | 'outsource';
 export type AuthProviderName = 'google' | 'password' | 'sso';
@@ -118,9 +131,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(nextUser);
         if (nextUser) {
             localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(nextUser));
+            // Mark this browser as current-epoch so the force-logout gate passes
+            // once the user is signed in.
+            localStorage.setItem(AUTH_EPOCH_KEY, String(AUTH_EPOCH));
+            setUsageActor({ email: nextUser.email, name: nextUser.name, role: nextUser.role });
         } else {
             localStorage.removeItem(USER_STORAGE_KEY);
+            clearUsageActor();
         }
+    }, []);
+
+    // Log a "came in" event, at most once per browser tab session for resumed
+    // sessions. Deliberate sign-ins always log.
+    const logSessionStart = useCallback((appUser: User, resumed: boolean) => {
+        try {
+            if (resumed && sessionStorage.getItem(USAGE_SESSION_KEY) === '1') return;
+            sessionStorage.setItem(USAGE_SESSION_KEY, '1');
+        } catch {
+            // sessionStorage may be unavailable; fall through and still log.
+        }
+        logUsage({
+            eventType: 'login',
+            feature: appUser.authProvider,
+            detail: { resumed, role: appUser.role || null },
+            actor: { email: appUser.email, name: appUser.name, role: appUser.role },
+        });
+    }, []);
+
+    // Install the /api usage interceptor once, client-side.
+    useEffect(() => {
+        installApiUsageInterceptor();
     }, []);
 
     const scheduleRefresh = useCallback((expiresInMs: number, email: string) => {
@@ -315,6 +355,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     if (cancelled) return;
 
                     persistUser(userData);
+                    logSessionStart(userData, false);
 
                     if (googleToken) {
                         persistDriveSession(googleToken, null, userData.email);
@@ -338,6 +379,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
             }
 
+            // ── One-time forced logout gate ──────────────────────────────────
+            // If this browser is behind the current AUTH_EPOCH, sign out once and
+            // show the login screen. Runs AFTER the SSO branch above so inbound
+            // SSO deep-links still authenticate normally.
+            const storedEpoch = Number(localStorage.getItem(AUTH_EPOCH_KEY) || '0');
+            if (storedEpoch < AUTH_EPOCH) {
+                try { googleLogout(); } catch { /* ignore */ }
+                try {
+                    await supabase.auth.signOut();
+                } catch (signOutError) {
+                    console.warn('Forced sign-out failed:', signOutError);
+                }
+                if (cancelled) return;
+                persistUser(null);
+                clearDriveSession();
+                // Advance the epoch FIRST, in its own try, so the gate never
+                // re-runs even if sessionStorage access throws (e.g. sandboxed
+                // iframes where localStorage works but sessionStorage does not).
+                try { localStorage.setItem(AUTH_EPOCH_KEY, String(AUTH_EPOCH)); } catch { /* ignore */ }
+                try {
+                    sessionStorage.removeItem('dwp_sso_checked');
+                    sessionStorage.removeItem(USAGE_SESSION_KEY);
+                } catch { /* ignore */ }
+                setLoading(false);
+                return;
+            }
+
             const storedUserRaw = localStorage.getItem(USER_STORAGE_KEY);
             const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
 
@@ -355,6 +423,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     if (cancelled) return;
 
                     persistUser(sessionAppUser);
+                    logSessionStart(sessionAppUser, true);
                     restoreDriveSession(sessionAppUser.email);
                     setLoading(false);
                     return;
@@ -377,6 +446,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     if (cancelled) return;
 
                     persistUser(resolvedStoredUser);
+                    logSessionStart(resolvedStoredUser, true);
                     restoreDriveSession(resolvedStoredUser.email);
                 }
             }
@@ -390,11 +460,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             cancelled = true;
             if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
         };
-    }, [buildPasswordUser, clearDriveSession, normalizeStoredUser, persistDriveSession, persistUser, resolveRole, restoreDriveSession]);
+    }, [buildPasswordUser, clearDriveSession, normalizeStoredUser, persistDriveSession, persistUser, resolveRole, restoreDriveSession, logSessionStart]);
 
     const connectGoogleDrive = useGoogleLogin({
         flow: 'auth-code',
-        scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file',
+        scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly',
         onSuccess: async (codeResponse) => {
             setDriveAuthLoading(true);
             try {
@@ -445,7 +515,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const triggerGoogleLogin = useGoogleLogin({
         flow: 'auth-code',
-        scope: 'openid email profile https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file',
+        scope: 'openid email profile https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly',
         ux_mode: 'popup',
         onSuccess: async (codeResponse) => {
             try {
@@ -469,6 +539,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 };
 
                 persistUser(nextUser);
+                logSessionStart(nextUser, false);
 
                 persistDriveSession(data.access_token, expiryTime, nextUser.email);
                 scheduleRefresh(data.expires_in * 1000, nextUser.email);
@@ -517,11 +588,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             passwordUser = await resolveRole(passwordUser, { autoAssignPasswordRole: true });
 
             persistUser(passwordUser);
+            logSessionStart(passwordUser, false);
             restoreDriveSession(passwordUser.email);
         } finally {
             setAuthenticating(false);
         }
-    }, [buildPasswordUser, persistUser, resolveRole, restoreDriveSession]);
+    }, [buildPasswordUser, persistUser, resolveRole, restoreDriveSession, logSessionStart]);
 
     const signUpWithPassword = useCallback(async (email: string, password: string): Promise<SignUpResult> => {
         const normalizedEmail = email.trim().toLowerCase();
@@ -560,6 +632,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 passwordUser = await resolveRole(passwordUser, { autoAssignPasswordRole: true });
 
                 persistUser(passwordUser);
+                logSessionStart(passwordUser, false);
                 restoreDriveSession(passwordUser.email);
             }
 
@@ -567,7 +640,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } finally {
             setAuthenticating(false);
         }
-    }, [buildPasswordUser, persistUser, resolveRole, restoreDriveSession]);
+    }, [buildPasswordUser, persistUser, resolveRole, restoreDriveSession, logSessionStart]);
 
     const resendSignUpConfirmation = useCallback(async (email: string) => {
         const normalizedEmail = email.trim().toLowerCase();
@@ -592,6 +665,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, []);
 
     const logout = useCallback(async () => {
+        logUsage({ eventType: 'logout' });
         googleLogout();
         try {
             await supabase.auth.signOut();
@@ -602,6 +676,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             persistUser(null);
             clearDriveSession();
             sessionStorage.removeItem('dwp_sso_checked');
+            try { sessionStorage.removeItem(USAGE_SESSION_KEY); } catch { /* ignore */ }
         }
     }, [clearDriveSession, persistUser]);
 

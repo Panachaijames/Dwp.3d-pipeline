@@ -34,6 +34,8 @@ export interface ProjectArea {
   startDate: string;
   targetDate: string;
   description: string;
+  /** Email of the 3D member assigned to this area from the Schedule (independent of the request-level assignee). */
+  assigned_to?: string | null;
 }
 
 export interface ProjectRequest {

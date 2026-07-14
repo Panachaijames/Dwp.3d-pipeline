@@ -32,7 +32,7 @@ export const generateConsultation = async (
   try {
     const ai = getAI();
     const response: GenerateContentResponse = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-3.1-pro-preview',
       contents: { role: 'user', parts: [{ text: prompt }] } as any,
       config: {
         systemInstruction: { parts: [{ text: systemInstruction }] } as any,
@@ -95,7 +95,7 @@ export const generateConceptImage = async (
       }
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-image-preview', // User requested model for Nano Banana
+        model: 'gemini-3.1-flash-image-preview', // User requested model for Nano Banana
 
         contents: { role: 'user', parts: parts } as any,
         config: {
@@ -245,7 +245,7 @@ export const determinePipelineRoute = async (description: string): Promise<{ inp
 
     const ai = getAI();
     const result = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3.5-flash",
       contents: { role: 'user', parts: [{ text: prompt }] } as any
     });
 

@@ -1,6 +1,38 @@
 "use client";
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useId, useSyncExternalStore } from 'react';
 import { MaterialAnnotation } from '../VizWorkflow/constants';
+
+// ---- Shared tag clipboard ----------------------------------------------------
+// Module-level so a tag copied on one image can be pasted onto another image
+// (every <AnnotatedRender> mounts its own instance, but they share this store).
+type TagClip = { code: string; note?: string; srcInstance: string; srcX: number; srcY: number; pastes: number };
+type TagSel = { instance: string; id: string };
+type TagHover = { instance: string; x: number; y: number };
+
+let _selected: TagSel | null = null;
+let _clip: TagClip | null = null;
+let _hover: TagHover | null = null; // updated on mousemove; intentionally non-reactive (read only at paste time)
+let _version = 0;
+const _subs = new Set<() => void>();
+const _emit = () => { _version += 1; _subs.forEach(fn => fn()); };
+
+const tagStore = {
+    subscribe(fn: () => void) { _subs.add(fn); return () => { _subs.delete(fn); }; },
+    version() { return _version; },
+    getSelected() { return _selected; },
+    getClip() { return _clip; },
+    getHover() { return _hover; },
+    setSelected(s: TagSel | null) { _selected = s; _emit(); },
+    setClip(c: TagClip | null) { _clip = c; _emit(); },
+    setHover(h: TagHover | null) { _hover = h; }, // no emit — avoids a re-render on every mousemove
+    bumpPaste() { if (_clip) { _clip = { ..._clip, pastes: _clip.pastes + 1 }; return _clip.pastes; } return 0; },
+};
+
+// Subscribe a component to selection/clipboard changes so highlights + the
+// "copied" hint repaint. Hover changes deliberately don't notify.
+function useTagStore() {
+    return useSyncExternalStore(tagStore.subscribe, tagStore.version, () => 0);
+}
 
 interface Props {
     imageData: string;
@@ -8,7 +40,7 @@ interface Props {
     onUpdateAnnotation: (id: string, x: number, y: number) => void;
     onEditAnnotation: (id: string, code: string, note?: string) => void;
     onDeleteAnnotation: (id: string) => void;
-    onAddAnnotation: (code: string, x: number, y: number) => void;
+    onAddAnnotation: (code: string, x: number, y: number, note?: string) => void;
     onFullscreen?: () => void;
     flatLay?: boolean;
 }
@@ -34,6 +66,17 @@ export default function AnnotatedRender({
     const [detailedColor, setDetailedColor] = useState(false);
     const newCodeInputRef = useRef<HTMLInputElement>(null);
 
+    // ---- Copy / paste of tags ----
+    const instanceId = useId();
+    useTagStore(); // re-render this image's labels when selection/clipboard changes
+    const selected = tagStore.getSelected();
+    const clip = tagStore.getClip();
+    // Keep the latest props reachable from the (stable) keydown listener.
+    const annotationsRef = useRef(annotations);
+    annotationsRef.current = annotations;
+    const onAddRef = useRef(onAddAnnotation);
+    onAddRef.current = onAddAnnotation;
+
     const getRelativePos = useCallback((clientX: number, clientY: number): { x: number; y: number } => {
         const rect = containerRef.current?.getBoundingClientRect();
         if (!rect) return { x: 50, y: 50 };
@@ -43,9 +86,58 @@ export default function AnnotatedRender({
         };
     }, []);
 
+    // Ctrl/Cmd+C copies the selected tag; Ctrl/Cmd+V stamps a duplicate.
+    // Paste lands on whichever image the mouse is over (at the cursor), or — if
+    // the mouse is over the source image / nowhere — just offset from the original.
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            const ae = document.activeElement as HTMLElement | null;
+            const typing = !!ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable);
+
+            if (e.key === 'Escape') {
+                const sel = tagStore.getSelected();
+                if (sel && sel.instance === instanceId) tagStore.setSelected(null);
+                return;
+            }
+            if (typing || !(e.ctrlKey || e.metaKey)) return;
+            const k = e.key.toLowerCase();
+
+            if (k === 'c') {
+                const sel = tagStore.getSelected();
+                if (!sel || sel.instance !== instanceId) return;
+                const ann = annotationsRef.current.find(a => a.id === sel.id);
+                if (!ann) return;
+                e.preventDefault();
+                tagStore.setClip({ code: ann.code, note: ann.note, srcInstance: instanceId, srcX: ann.x, srcY: ann.y, pastes: 0 });
+            } else if (k === 'v') {
+                const c = tagStore.getClip();
+                if (!c) return;
+                const hov = tagStore.getHover();
+                const target = hov ? hov.instance : c.srcInstance;
+                if (target !== instanceId) return; // only the image under the cursor (or the source) pastes
+                e.preventDefault();
+                const clamp = (v: number) => Math.max(2, Math.min(98, v));
+                let x: number, y: number;
+                if (hov && hov.instance !== c.srcInstance) {
+                    // Pasting onto a different image → drop it at the cursor.
+                    x = hov.x; y = hov.y;
+                } else {
+                    // Same image → step each successive paste diagonally so they don't stack.
+                    const n = tagStore.bumpPaste();
+                    x = c.srcX + n * 4;
+                    y = c.srcY + n * 4;
+                }
+                onAddRef.current(c.code, clamp(x), clamp(y), c.note);
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [instanceId]);
+
     const handleLabelMouseDown = (e: React.MouseEvent, ann: MaterialAnnotation) => {
         e.stopPropagation();
         e.preventDefault();
+        tagStore.setSelected({ instance: instanceId, id: ann.id }); // select on click/drag-start
         draggingRef.current = { id: ann.id, startMouseX: e.clientX, startMouseY: e.clientY, origX: ann.x, origY: ann.y };
 
         const onMouseMove = (ev: MouseEvent) => {
@@ -72,6 +164,7 @@ export default function AnnotatedRender({
     const handleContainerClick = (e: React.MouseEvent) => {
         if (draggingRef.current) return;
         if (!addMode) {
+            tagStore.setSelected(null); // click empty area → deselect
             onFullscreen?.();
             return;
         }
@@ -120,8 +213,16 @@ export default function AnnotatedRender({
                     {addMode ? 'Click image to place label' : 'Add Label'}
                 </button>
                 <span style={{ fontSize: 9, color: 'var(--tx3)' }}>
-                    {annotations.length} annotation{annotations.length !== 1 ? 's' : ''} | drag to reposition | edit or delete labels
+                    {annotations.length} annotation{annotations.length !== 1 ? 's' : ''} | click to select · Ctrl+C / Ctrl+V to duplicate · drag to reposition · edit or delete
                 </span>
+                {clip && (
+                    <span
+                        style={{ fontSize: 9, fontWeight: 700, color: '#000', background: tagColorForCode(clip.code, detailedColor), borderRadius: 3, padding: '2px 6px', fontFamily: 'monospace' }}
+                        title="A tag is copied. Hover an image and press Ctrl+V to stamp it."
+                    >
+                        ⧉ {clip.code} copied · Ctrl+V to paste
+                    </span>
+                )}
                 <button
                     onClick={() => setLabelScale(prev => prev > 1 ? 1 : 1.75)}
                     style={{
@@ -202,6 +303,8 @@ export default function AnnotatedRender({
                         cursor: addMode ? 'crosshair' : (onFullscreen ? 'pointer' : 'default'),
                     }}
                     onClick={handleContainerClick}
+                    onMouseMove={(e) => { const p = getRelativePos(e.clientX, e.clientY); tagStore.setHover({ instance: instanceId, x: p.x, y: p.y }); }}
+                    onMouseLeave={() => { const h = tagStore.getHover(); if (h && h.instance === instanceId) tagStore.setHover(null); }}
                 >
                     <img
                         src={imageData}
@@ -217,9 +320,14 @@ export default function AnnotatedRender({
                             flatLay={flatLay || ann.variant === 'flat'}
                             labelScale={labelScale}
                             detailedColor={detailedColor}
+                            selected={!!selected && selected.instance === instanceId && selected.id === ann.id}
                             onMouseDown={(e) => handleLabelMouseDown(e, ann)}
                             onEdit={(code, note) => onEditAnnotation(ann.id, code, note)}
-                            onDelete={() => onDeleteAnnotation(ann.id)}
+                            onDelete={() => {
+                                const sel = tagStore.getSelected();
+                                if (sel && sel.instance === instanceId && sel.id === ann.id) tagStore.setSelected(null);
+                                onDeleteAnnotation(ann.id);
+                            }}
                         />
                     ))}
 
@@ -327,11 +435,12 @@ const tagColorForCode = (code: string, detailed: boolean): string => {
     return FURNITURE_PREFIXES.has(prefix) ? FURNITURE_COLOR : MATERIAL_COLOR;
 };
 
-function AnnotationLabel({ annotation, flatLay, labelScale, detailedColor, onMouseDown, onEdit, onDelete }: {
+function AnnotationLabel({ annotation, flatLay, labelScale, detailedColor, selected, onMouseDown, onEdit, onDelete }: {
     annotation: MaterialAnnotation;
     flatLay: boolean;
     labelScale: number;
     detailedColor: boolean;
+    selected: boolean;
     onMouseDown: (e: React.MouseEvent) => void;
     onEdit: (code: string, note?: string) => void;
     onDelete: () => void;
@@ -371,7 +480,7 @@ function AnnotationLabel({ annotation, flatLay, labelScale, detailedColor, onMou
                 left: `${annotation.x}%`,
                 top: `${annotation.y}%`,
                 transform: 'translate(-50%, -50%)',
-                zIndex: 10,
+                zIndex: selected ? 12 : 10,
                 cursor: editing ? 'default' : 'grab',
             }}
             onMouseDown={editing ? undefined : onMouseDown}
@@ -388,7 +497,7 @@ function AnnotationLabel({ annotation, flatLay, labelScale, detailedColor, onMou
                 padding: `${2 * labelScale}px ${6 * labelScale}px`,
                 borderRadius: 2,
                 whiteSpace: 'nowrap',
-                boxShadow: 'none',
+                boxShadow: selected ? '0 0 0 2px #fff, 0 0 0 4px #111827' : 'none',
                 position: 'relative',
                 lineHeight: 1.4,
                 border: '1px solid rgba(0,0,0,0.15)',
@@ -401,7 +510,7 @@ function AnnotationLabel({ annotation, flatLay, labelScale, detailedColor, onMou
                 padding: `${2 * labelScale}px ${6 * labelScale}px`,
                 borderRadius: 3,
                 whiteSpace: 'nowrap',
-                boxShadow: '0 1px 4px rgba(0,0,0,0.5)',
+                boxShadow: selected ? '0 0 0 2px #fff, 0 0 0 4px #111827, 0 1px 4px rgba(0,0,0,0.5)' : '0 1px 4px rgba(0,0,0,0.5)',
                 position: 'relative',
                 lineHeight: 1.4,
             }}>

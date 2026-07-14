@@ -1,7 +1,12 @@
 "use client";
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import dynamic from 'next/dynamic';
+import { get as idbGet, set as idbSet } from 'idb-keyval';
 import { TOOLS, VizProject, VizLog, PhaseKey, freshLog as makeFreshLog, MaterialAnnotation, DD_PHASE_MATERIAL_SCHEDULE, MATERIAL_BOARD_CATEGORIES, FURNITURE_CATEGORIES, FULL_CATEGORY_CATALOG } from './constants';
 import AnnotatedRender from '../DDMaterialTagger/AnnotatedRender';
+
+// Konva + in-browser SAM — client-only, loaded on demand when a board is opened in the canvas
+const BoardCanvasEditor = dynamic(() => import('./BoardCanvasEditor'), { ssr: false });
 import { useAuth } from '../../../contexts/AuthContext';
 import { PdfSectionPicker } from '../PdfLibrary/PdfSectionPicker';
 import { usePdfLibraryStore, PdfContextSelection } from '@/store/usePdfLibraryStore';
@@ -212,6 +217,39 @@ const exportAnnotatedImage = async (imageSrc: string, annotations: MaterialAnnot
     triggerDownload(canvas.toDataURL("image/png"), filename);
 };
 
+// Auto-number bare category codes so repeated categories stay distinct (WD → WD-01, WD-02).
+// Tags with the same code AND the same note describe the same material and share one number,
+// so tagging the same finish twice yields qty 2 in the schedule rather than a phantom second
+// material. Codes that already carry digits (MT01, GL04+MT02, WD-01) are left untouched.
+const autoNumberAnnotations = (anns: MaterialAnnotation[]): MaterialAnnotation[] => {
+    const nextNum = new Map<string, number>();            // "WD" → highest number issued
+    const issued = new Map<string, string>();             // "WD|walnut veneer" → "WD-01"
+    // Seed from any codes the model already numbered, so a bare "WD" can't collide with an
+    // existing "WD-01" — and a bare "WD" with the same note reuses it instead of splitting.
+    for (const a of anns) {
+        const m = a.code.trim().match(/^([A-Za-z]+)-(\d+)$/);
+        if (m) {
+            const prefix = m[1].toUpperCase();
+            nextNum.set(prefix, Math.max(nextNum.get(prefix) ?? 0, parseInt(m[2], 10)));
+            issued.set(`${prefix}|${(a.note ?? '').trim().toLowerCase()}`, a.code.trim());
+        }
+    }
+    return anns.map(a => {
+        const code = a.code.trim();
+        if (!/^[A-Za-z]+$/.test(code)) return a;
+        const prefix = code.toUpperCase();
+        const groupKey = `${prefix}|${(a.note ?? '').trim().toLowerCase()}`;
+        let numbered = issued.get(groupKey);
+        if (!numbered) {
+            const n = (nextNum.get(prefix) ?? 0) + 1;
+            nextNum.set(prefix, n);
+            numbered = `${prefix}-${String(n).padStart(2, '0')}`;
+            issued.set(groupKey, numbered);
+        }
+        return { ...a, code: numbered };
+    });
+};
+
 export default function PromptGenWorkspace({ proj, logs, saveL, freshLog: makeFresh }: Props) {
     const { user, accessToken, requestDriveAccess } = useAuth();
     const [mode, setMode] = useState<"brief" | "image" | "custom">("brief");
@@ -230,6 +268,78 @@ export default function PromptGenWorkspace({ proj, logs, saveL, freshLog: makeFr
     const [copiedIds, setCopiedIds] = useState<Set<string>>(new Set());
     const [fullScreenResult, setFullScreenResult] = useState<string | null>(null);
     const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
+    const [canvasEditor, setCanvasEditor] = useState<{ src: string; title: string } | null>(null);
+    const [showMbImport, setShowMbImport] = useState(false);
+    const [mbImportUrl, setMbImportUrl] = useState('');
+    const [mbImporting, setMbImporting] = useState(false);
+    const mbImportFileRef = useRef<HTMLInputElement | null>(null);
+
+    // Imported boards (Pinterest/URL/file) — persisted per project in IndexedDB so the
+    // canvas can be reopened later (its edit session is saved separately by the editor).
+    type ImportedBoard = { id: string; title: string; src: string; addedAt: number };
+    const [importedBoards, setImportedBoards] = useState<ImportedBoard[]>([]);
+    const importsKey = `dwp_mb_imports_${proj.id}`;
+
+    useEffect(() => {
+        let alive = true;
+        idbGet(importsKey).then((list) => { if (alive && Array.isArray(list)) setImportedBoards(list); }).catch(() => {});
+        return () => { alive = false; };
+    }, [importsKey]);
+
+    const addImportedBoard = (title: string, src: string) => {
+        setImportedBoards(prev => {
+            const entry: ImportedBoard = { id: Math.random().toString(36).substring(2, 11), title, src, addedAt: Date.now() };
+            const next = [entry, ...prev].slice(0, 12);
+            void idbSet(importsKey, next).catch((e) => console.warn('[imports] save failed:', e));
+            return next;
+        });
+    };
+
+    const removeImportedBoard = (id: string) => {
+        setImportedBoards(prev => {
+            const next = prev.filter(b => b.id !== id);
+            void idbSet(importsKey, next).catch(() => {});
+            return next;
+        });
+    };
+
+    // Import an external board (e.g. a Pinterest pin or image URL) into the canvas editor.
+    const importBoardFromUrl = async () => {
+        const url = mbImportUrl.trim();
+        if (!url || mbImporting) return;
+        setMbImporting(true);
+        try {
+            const res = await fetch('/api/fetch-image', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url }),
+            });
+            let data: any = {};
+            try { data = await res.json(); } catch { /* non-JSON */ }
+            if (!res.ok || !data.imageData) throw new Error(data.error || `Fetch failed (${res.status})`);
+            const title = /pinterest\.|pinimg\./i.test(url) ? 'Pinterest board' : 'Imported board';
+            addImportedBoard(title, data.imageData);
+            setCanvasEditor({ src: data.imageData, title });
+            setMbImportUrl('');
+        } catch (err: any) {
+            alert(`Import failed: ${err?.message || 'unknown error'}\n\nTip: on Pinterest, right-click the image → "Copy image address" and paste that URL instead.`);
+        } finally {
+            setMbImporting(false);
+        }
+    };
+
+    const importBoardFromFile = (files: FileList | null) => {
+        const file = files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            const title = file.name.replace(/\.[^.]+$/, '') || 'Imported board';
+            addImportedBoard(title, String(reader.result));
+            setCanvasEditor({ src: String(reader.result), title });
+        };
+        reader.onerror = () => alert('Could not read that file');
+        reader.readAsDataURL(file);
+    };
     // Direct Image Generation State
     const [imageLoading, setImageLoading] = useState<Record<string, boolean>>({});
     const [showImageOptions, setShowImageOptions] = useState<Record<string, boolean>>({});
@@ -432,7 +542,7 @@ export default function PromptGenWorkspace({ proj, logs, saveL, freshLog: makeFr
             saveScroll();
             setImgAnnotations(prev => ({
                 ...prev,
-                [key]: parsed
+                [key]: autoNumberAnnotations(parsed
                     .filter(a => a && typeof a.code === 'string' && typeof a.x === 'number' && typeof a.y === 'number')
                     .map(a => ({
                         code: String(a.code),
@@ -440,7 +550,7 @@ export default function PromptGenWorkspace({ proj, logs, saveL, freshLog: makeFr
                         y: Math.max(0, Math.min(100, Number(a.y))),
                         note: a.note ? String(a.note) : undefined,
                         id: Math.random().toString(36).substring(2, 11),
-                    })),
+                    }))),
             }));
         } catch (err: any) {
             const snippet = rawText ? ` · raw: ${rawText.slice(0, 160)}` : '';
@@ -487,7 +597,7 @@ export default function PromptGenWorkspace({ proj, logs, saveL, freshLog: makeFr
             return;
         }
         // Open a placeholder tab synchronously so the browser treats it as a user-initiated
-        // popup. The fetch below takes 30–60s; by the time it resolves, a deferred
+        // popup. The fetch below takes a few seconds; by the time it resolves, a deferred
         // window.open would be blocked. We navigate this tab to the sheet URL when ready.
         const pendingTab = window.open('about:blank', '_blank');
         if (pendingTab?.document?.body) {
@@ -495,7 +605,7 @@ export default function PromptGenWorkspace({ proj, logs, saveL, freshLog: makeFr
             pendingTab.document.body.style.cssText = 'font-family:system-ui;padding:32px;color:#333;background:#fafafa';
             pendingTab.document.body.innerHTML =
                 '<h2 style="margin:0 0 8px">Preparing your Google Sheet…</h2>' +
-                '<p style="color:#666">Aggregating tags and estimating prices. This usually takes 30–60 seconds. This tab will redirect automatically.</p>';
+                '<p style="color:#666">Building your material schedule. This tab will redirect automatically.</p>';
         }
         setSheetExporting(prev => ({ ...prev, [tagKey]: true }));
         try {
@@ -558,7 +668,7 @@ export default function PromptGenWorkspace({ proj, logs, saveL, freshLog: makeFr
     const renderTaggableImage = (
         imgSrc: string,
         tagKey: string,
-        opts: { altText: string; downloadIndex: number; onFullscreen?: () => void; allowUpscale?: boolean; allowSheetExport?: boolean; tagMode?: 'scene' | 'materialBoard' | 'furniture'; }
+        opts: { altText: string; downloadIndex: number; onFullscreen?: () => void; allowUpscale?: boolean; allowSheetExport?: boolean; allowCanvasEdit?: boolean; tagMode?: 'scene' | 'materialBoard' | 'furniture'; }
     ) => {
         const tagged = imgAnnotations[tagKey];
         const tagging = imgTagLoading[tagKey];
@@ -592,15 +702,25 @@ export default function PromptGenWorkspace({ proj, logs, saveL, freshLog: makeFr
                                 <button className="vw-btn vw-btn-sm vw-btn-g" style={{ fontSize: 9 }} onClick={() => handleExport(effectiveSrc, opts.downloadIndex, tagged)} title="Download tagged image">
                                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                                 </button>
+                                {opts.allowCanvasEdit && (
+                                    <button
+                                        className="vw-btn vw-btn-sm"
+                                        style={{ fontSize: 9, borderColor: '#c084fc', color: '#c084fc', fontWeight: 600 }}
+                                        onClick={() => setCanvasEditor({ src: effectiveSrc, title: opts.altText })}
+                                        title="Split this board into pieces and rearrange them on an editable canvas"
+                                    >
+                                        ✂ Edit in Canvas
+                                    </button>
+                                )}
                                 {opts.allowSheetExport && (
                                     <button
                                         className="vw-btn vw-btn-sm"
                                         style={{ fontSize: 9, borderColor: '#34a853', color: '#34a853', fontWeight: 600 }}
                                         onClick={() => exportTagsToSheets(tagged, tagKey)}
                                         disabled={sheetExporting[tagKey]}
-                                        title={accessToken ? 'Group tags by code, estimate prices via web search, and open as a Google Sheet (~30–60s)' : 'Sign in with Google to export tags to Sheets'}
+                                        title={accessToken ? 'Build a DWP material schedule from these tags and open it as a formatted Google Sheet' : 'Sign in with Google to export tags to Sheets'}
                                     >
-                                        {sheetExporting[tagKey] ? '⊞ Pricing… (~30s)' : '⊞ Sheets + Prices'}
+                                        {sheetExporting[tagKey] ? '⊞ Exporting…' : '⊞ Export to Sheets'}
                                     </button>
                                 )}
                             </div>
@@ -612,7 +732,7 @@ export default function PromptGenWorkspace({ proj, logs, saveL, freshLog: makeFr
                                 onUpdateAnnotation={(id, x, y) => setImgAnnotations(prev => ({ ...prev, [tagKey]: prev[tagKey].map(a => a.id === id ? { ...a, x, y } : a) }))}
                                 onEditAnnotation={(id, code, note) => setImgAnnotations(prev => ({ ...prev, [tagKey]: prev[tagKey].map(a => a.id === id ? { ...a, code, note } : a) }))}
                                 onDeleteAnnotation={(id) => setImgAnnotations(prev => ({ ...prev, [tagKey]: prev[tagKey].filter(a => a.id !== id) }))}
-                                onAddAnnotation={(code, x, y) => setImgAnnotations(prev => ({ ...prev, [tagKey]: [...prev[tagKey], { id: Math.random().toString(36).substring(2, 11), code, x, y }] }))}
+                                onAddAnnotation={(code, x, y, note) => setImgAnnotations(prev => ({ ...prev, [tagKey]: [...prev[tagKey], { id: Math.random().toString(36).substring(2, 11), code, x, y, note }] }))}
                                 onFullscreen={opts.onFullscreen}
                             />
                             {upscaling && (
@@ -667,6 +787,16 @@ export default function PromptGenWorkspace({ proj, logs, saveL, freshLog: makeFr
                                 >
                                     ◩ Tag
                                 </button>
+                                {opts.allowCanvasEdit && (
+                                    <button
+                                        onClick={() => setCanvasEditor({ src: effectiveSrc, title: opts.altText })}
+                                        className="vw-btn vw-btn-sm"
+                                        style={{ position: 'absolute', top: 8, left: 8, padding: '4px 8px', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', borderColor: '#c084fc', color: '#c084fc', fontWeight: 700, fontSize: 10 }}
+                                        title="Split this board into pieces and rearrange them on an editable canvas"
+                                    >
+                                        ✂ Canvas
+                                    </button>
+                                )}
                                 {opts.allowUpscale && !upscaled && (
                                     <button
                                         onClick={() => upscaleImage(imgSrc, tagKey)}
@@ -1804,6 +1934,15 @@ Output rules:
                                             >
                                                 {copiedIds.has(`mb-${r.id}`) ? '✓ Copied' : 'Copy Material Board'}
                                             </button>
+                                            <input type="file" accept="image/*" ref={mbImportFileRef} style={{ display: 'none' }} onChange={(e) => { importBoardFromFile(e.target.files); e.target.value = ''; }} />
+                                            <button
+                                                className="vw-btn vw-btn-sm"
+                                                style={{ fontSize: 9, borderColor: '#c084fc', color: '#c084fc', fontWeight: 600 }}
+                                                onClick={() => setShowMbImport(v => !v)}
+                                                title="Import an external board image (Pinterest pin link, image URL, or file) as an editable canvas template"
+                                            >
+                                                ✂ Import Board
+                                            </button>
                                             {/* Material Board Image Generation Buttons */}
                                             {!showMbImageOptions[r.id] && !mbImageLoading[r.id] ? (
                                                 <button
@@ -1843,6 +1982,56 @@ Output rules:
                                                 </button>
                                             )}
                                         </div>
+                                    {/* Import external board (Pinterest / URL / file) */}
+                                    {showMbImport && (
+                                        <div style={{ marginTop: 8, padding: '8px 10px', background: 'var(--card)', border: '1px dashed #c084fc', borderRadius: 6 }}>
+                                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                                                <input
+                                                    className="vw-ft"
+                                                    style={{ flex: 1, minWidth: 220, height: 28, fontSize: 10 }}
+                                                    placeholder="Paste a Pinterest pin link or image URL…"
+                                                    value={mbImportUrl}
+                                                    onChange={e => setMbImportUrl(e.target.value)}
+                                                    onKeyDown={e => { if (e.key === 'Enter') void importBoardFromUrl(); }}
+                                                    disabled={mbImporting}
+                                                />
+                                                <button className="vw-btn vw-btn-sm vw-btn-p" style={{ fontSize: 9 }} onClick={() => void importBoardFromUrl()} disabled={mbImporting || !mbImportUrl.trim()}>
+                                                    {mbImporting ? '◌ Fetching…' : '⤵ Import to Canvas'}
+                                                </button>
+                                                <button className="vw-btn vw-btn-sm vw-btn-g" style={{ fontSize: 9 }} onClick={() => mbImportFileRef.current?.click()} disabled={mbImporting}>
+                                                    ⤒ Upload file
+                                                </button>
+                                            </div>
+                                            {importedBoards.length > 0 && (
+                                                <div style={{ marginTop: 8 }}>
+                                                    <div style={{ fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--tx3)', marginBottom: 5 }}>
+                                                        Imported boards <span style={{ fontWeight: 400, opacity: 0.7 }}>— canvas edits are saved automatically; click to reopen</span>
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                                        {importedBoards.map(b => (
+                                                            <div key={b.id} style={{ position: 'relative', width: 108 }}>
+                                                                <img
+                                                                    src={b.src}
+                                                                    alt={b.title}
+                                                                    style={{ width: 108, height: 76, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--bdr)', cursor: 'pointer', display: 'block' }}
+                                                                    onClick={() => setCanvasEditor({ src: b.src, title: b.title })}
+                                                                    title={`${b.title} — open in canvas (your edits are restored)`}
+                                                                />
+                                                                <button
+                                                                    onClick={() => removeImportedBoard(b.id)}
+                                                                    style={{ position: 'absolute', top: 3, right: 3, width: 16, height: 16, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.65)', color: '#f87171', fontSize: 10, lineHeight: 1, cursor: 'pointer' }}
+                                                                    title="Remove from imported boards"
+                                                                >
+                                                                    ×
+                                                                </button>
+                                                                <div style={{ fontSize: 8, color: 'var(--tx3)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.title}</div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                     {/* Material Board Errors */}
                                     {mbImageErrors[r.id] && (
                                         <div style={{ fontSize: 11, color: '#f87171', marginBottom: 8 }}>{mbImageErrors[r.id]}</div>
@@ -1874,6 +2063,7 @@ Output rules:
                                                                 downloadIndex: imgIndex,
                                                                 onFullscreen: () => setFullScreenImage(entry.src),
                                                                 tagMode: 'materialBoard',
+                                                                allowCanvasEdit: true,
                                                             })}
                                                         </div>
                                                     );
@@ -2142,6 +2332,14 @@ Output rules:
                         onClick={(e) => e.stopPropagation()}
                     />
                 </div>
+            )}
+
+            {canvasEditor && (
+                <BoardCanvasEditor
+                    src={canvasEditor.src}
+                    title={canvasEditor.title}
+                    onClose={() => setCanvasEditor(null)}
+                />
             )}
             {snippetModal.isOpen && (
                 <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={() => setSnippetModal(prev => ({ ...prev, isOpen: false }))}>

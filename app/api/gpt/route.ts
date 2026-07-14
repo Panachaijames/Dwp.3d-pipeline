@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
 
         // Based on the user's provided document structure
         const response: any = await (client as any).responses.create({
-            model: "gpt-5.4",
+            model: "gpt-5.5",
             input: combinedInput
         });
 

@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
             const client = getAI(true);
 
             const videoRequest: any = {
-                model: 'veo-2.0-generate-001',
+                model: 'veo-3.1-generate-preview',
                 prompt: prompt,
                 config: { aspectRatio: aspectRatio },
             };

@@ -4,7 +4,7 @@ export const maxDuration = 60; // Set to 60 seconds to avoid 504 on large prompt
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const PRIMARY_MODEL = 'gemini-3.1-pro-preview';
-const FALLBACK_MODEL = 'gemini-3-pro-preview';
+const FALLBACK_MODEL = 'gemini-3.5-flash';
 
 export async function POST(request: NextRequest) {
     if (!GEMINI_API_KEY) {

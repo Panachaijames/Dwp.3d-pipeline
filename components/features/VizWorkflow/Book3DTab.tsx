@@ -23,11 +23,9 @@ interface ProjectOption {
 const PREFERRED_TOOLS = ["3ds Max", "Render for Revit", "AI Rendering"];
 const DEFAULT_DEPARTMENT = 'Not specified';
 
-const emptyAreas = (): ProjectArea[] => [
-    { id: 1, scope: '', designer: '', startDate: '', targetDate: '', description: '' },
-    { id: 2, scope: '', designer: '', startDate: '', targetDate: '', description: '' },
-    { id: 3, scope: '', designer: '', startDate: '', targetDate: '', description: '' },
-];
+const emptyArea = (id: number): ProjectArea => ({ id, scope: '', designer: '', startDate: '', targetDate: '', description: '' });
+
+const emptyAreas = (): ProjectArea[] => [emptyArea(1), emptyArea(2), emptyArea(3)];
 
 const initForm = (projName?: string, requester = '', department = DEFAULT_DEPARTMENT) => ({
     selectedProjectId: '',
@@ -255,6 +253,18 @@ export default function Book3DTab({ proj }: Props) {
         setForm({ ...form, areas: newAreas });
     };
 
+    const handleAddArea = () => {
+        const nextId = form.areas.reduce((max, a) => Math.max(max, a.id), 0) + 1;
+        setForm({ ...form, areas: [...form.areas, emptyArea(nextId)] });
+        setExpandedArea(form.areas.length + 1);
+    };
+
+    const handleRemoveArea = (index: number) => {
+        if (form.areas.length <= 1) return;
+        setForm({ ...form, areas: form.areas.filter((_, i) => i !== index) });
+        setExpandedArea(null);
+    };
+
     const handleProjectSelection = (projectId: string) => {
         const project = projectOptions.find(option => option.id === projectId);
 
@@ -448,12 +458,14 @@ export default function Book3DTab({ proj }: Props) {
 
             // Sync to Google Calendar
             try {
-                await fetch('/api/calendar/create-event', {
+                const calRes = await fetch('/api/calendar/create-event', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('dwp_access_token')}`
                     },
                     body: JSON.stringify({
+                        requestId: newId,
                         projectName: form.projectName,
                         projectNumber: form.projectNumber,
                         requestName: form.requestName,
@@ -462,6 +474,12 @@ export default function Book3DTab({ proj }: Props) {
                         description: form.description
                     })
                 });
+                // Remember the calendar event so rescheduling from the 3D Schedule can update it
+                const calData = await calRes.json().catch(() => null);
+                const eventId = calData?.eventId || calData?.id;
+                if (calRes.ok && eventId) {
+                    await supabase.from('project_requests').update({ gcal_event_id: eventId }).eq('id', newId);
+                }
             } catch (calErr) {
                 console.error("Calendar sync failed (non-fatal):", calErr);
             }
@@ -664,20 +682,28 @@ export default function Book3DTab({ proj }: Props) {
             <div className="vw-cd" style={{ padding: 16, marginBottom: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                     <div className="vw-cd-t">Areas &amp; Scope Definition</div>
-                    <span style={{ fontSize: 9, color: "var(--tx3)" }}>Define up to 3 areas</span>
+                    <span style={{ fontSize: 9, color: "var(--tx3)" }}>{form.areas.length} area{form.areas.length !== 1 ? "s" : ""} defined</span>
                 </div>
-                {[0, 1, 2].map(index => (
-                    <div key={index} style={{ border: "1px solid var(--bd)", borderRadius: 8, marginBottom: 6, overflow: "hidden" }}>
-                        <button type="button"
-                            style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "var(--bg2)", border: "none", cursor: "pointer", color: "var(--tx)" }}
-                            onClick={() => setExpandedArea(expandedArea === index + 1 ? null : index + 1)}
-                        >
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                <span style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--ac)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{index + 1}</span>
-                                <span style={{ fontWeight: 500, fontSize: 12 }}>{form.areas[index].scope || `Area ${index + 1}`}</span>
-                            </div>
-                            <span style={{ fontSize: 10 }}>{expandedArea === index + 1 ? "▾" : "▸"}</span>
-                        </button>
+                {form.areas.map((area, index) => (
+                    <div key={area.id} style={{ border: "1px solid var(--bd)", borderRadius: 8, marginBottom: 6, overflow: "hidden" }}>
+                        <div style={{ display: "flex", alignItems: "stretch", background: "var(--bg2)" }}>
+                            <button type="button"
+                                style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "none", border: "none", cursor: "pointer", color: "var(--tx)" }}
+                                onClick={() => setExpandedArea(expandedArea === index + 1 ? null : index + 1)}
+                            >
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <span style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--ac)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{index + 1}</span>
+                                    <span style={{ fontWeight: 500, fontSize: 12 }}>{area.scope || `Area ${index + 1}`}</span>
+                                </div>
+                                <span style={{ fontSize: 10 }}>{expandedArea === index + 1 ? "▾" : "▸"}</span>
+                            </button>
+                            {form.areas.length > 1 && (
+                                <button type="button" title="Remove area"
+                                    style={{ padding: "0 12px", background: "none", border: "none", borderLeft: "1px solid var(--bd)", cursor: "pointer", color: "var(--tx3)", fontSize: 12 }}
+                                    onClick={() => handleRemoveArea(index)}
+                                >✕</button>
+                            )}
+                        </div>
                         {expandedArea === index + 1 && (
                             <div style={{ padding: 14 }}>
                                 <div className="vw-fg">
@@ -690,6 +716,9 @@ export default function Book3DTab({ proj }: Props) {
                         )}
                     </div>
                 ))}
+                <button type="button" className="vw-btn vw-btn-g vw-btn-sm" style={{ width: "100%", marginTop: 4 }} onClick={handleAddArea}>
+                    + Add Area
+                </button>
             </div>
 
             {/* ── Outsource: Company Info (shown only in outsource mode) ── */}
