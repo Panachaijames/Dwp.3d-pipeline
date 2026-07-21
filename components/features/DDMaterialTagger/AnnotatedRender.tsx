@@ -43,6 +43,9 @@ interface Props {
     onAddAnnotation: (code: string, x: number, y: number, note?: string) => void;
     onFullscreen?: () => void;
     flatLay?: boolean;
+    /** Height cap of the scrollable viewport while zoomed in. Defaults to 520
+     *  (the compact card size); fullscreen hosts pass a viewport-based value. */
+    zoomMaxHeight?: number | string;
 }
 
 export default function AnnotatedRender({
@@ -54,6 +57,7 @@ export default function AnnotatedRender({
     onAddAnnotation,
     onFullscreen,
     flatLay = false,
+    zoomMaxHeight = 520,
 }: Props) {
     const containerRef = useRef<HTMLDivElement>(null);
     const draggingRef = useRef<{ id: string; startMouseX: number; startMouseY: number; origX: number; origY: number } | null>(null);
@@ -137,6 +141,11 @@ export default function AnnotatedRender({
     const handleLabelMouseDown = (e: React.MouseEvent, ann: MaterialAnnotation) => {
         e.stopPropagation();
         e.preventDefault();
+        // preventDefault keeps the previously-focused element focused; if that is a
+        // text field, the Ctrl+C/V keydown handler would classify the shortcut as
+        // typing and ignore it — so selecting a tag takes keyboard ownership.
+        const ae = document.activeElement as HTMLElement | null;
+        if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) ae.blur();
         tagStore.setSelected({ instance: instanceId, id: ann.id }); // select on click/drag-start
         draggingRef.current = { id: ann.id, startMouseX: e.clientX, startMouseY: e.clientY, origX: ann.x, origY: ann.y };
 
@@ -290,7 +299,7 @@ export default function AnnotatedRender({
                     overflow: zoom > 1 ? 'auto' : 'hidden',
                     border: addMode ? '2px solid #ccff00' : '1px solid var(--bdr)',
                     userSelect: 'none',
-                    maxHeight: zoom > 1 ? 520 : undefined,
+                    maxHeight: zoom > 1 ? zoomMaxHeight : undefined,
                 }}
             >
                 <div

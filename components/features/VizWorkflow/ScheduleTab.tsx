@@ -102,6 +102,9 @@ export default function ScheduleTab({ rawRequests, setRawRequests }: ScheduleTab
     const [newPersonText, setNewPersonText] = useState('');
     const [addingPerson, setAddingPerson] = useState(false);
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+    // Which multi-booking project groups are expanded (default collapsed, so a
+    // project with several bookings shows as one summary row until opened).
+    const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
     const [drag, setDrag] = useState<DragState | null>(null);
     const [editingReq, setEditingReq] = useState<any | null>(null);
 
@@ -156,6 +159,15 @@ export default function ScheduleTab({ rawRequests, setRawRequests }: ScheduleTab
         });
     };
 
+    const toggleProject = (key: string) => {
+        setExpandedProjects(prev => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+    };
+
     const prevMonth = () => {
         if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
         else setViewMonth(m => m - 1);
@@ -180,6 +192,45 @@ export default function ScheduleTab({ rawRequests, setRawRequests }: ScheduleTab
             return s <= monthEnd && e >= monthStart;
         });
     }, [rawRequests, viewYear, viewMonth]);
+
+    // Group bookings that belong to the same project (by project number, falling
+    // back to project name) so a project with several bookings renders under one
+    // collapsible header instead of a repeated row per booking.
+    const projectGroups = useMemo(() => {
+        const map = new Map<string, { key: string; projectNumber: string; projectName: string; reqs: any[] }>();
+        for (const req of visibleRequests) {
+            const key = String(req.project_number || req.project_name || req.id || '').trim().toLowerCase() || String(req.id);
+            let g = map.get(key);
+            if (!g) { g = { key, projectNumber: req.project_number, projectName: req.project_name, reqs: [] }; map.set(key, g); }
+            g.reqs.push(req);
+        }
+        return Array.from(map.values());
+    }, [visibleRequests]);
+
+    // Flattened so same-project bookings are contiguous in render order.
+    const orderedRequests = useMemo(() => projectGroups.flatMap(g => g.reqs), [projectGroups]);
+
+    // Per-request group metadata: which group it belongs to, group size, whether
+    // it is the group's first row (renders the header), and the group's combined
+    // start→deadline span (for the collapsed summary bar).
+    const reqGroupMeta = useMemo(() => {
+        const meta = new Map<string, { key: string; size: number; firstId: string; groupIndex: number; projectNumber: string; projectName: string; minStart: string | null; maxEnd: string | null }>();
+        projectGroups.forEach((g, gi) => {
+            const firstId = g.reqs[0]?.id;
+            let minStart: string | null = null;
+            let maxEnd: string | null = null;
+            for (const r of g.reqs) {
+                const s = r.start_date || r.timestamp;
+                const e = r.deadline;
+                if (s && (!minStart || new Date(s) < new Date(minStart))) minStart = s;
+                if (e && (!maxEnd || new Date(e) > new Date(maxEnd))) maxEnd = e;
+            }
+            for (const r of g.reqs) {
+                meta.set(r.id, { key: g.key, size: g.reqs.length, firstId, groupIndex: gi, projectNumber: g.projectNumber, projectName: g.projectName, minStart, maxEnd });
+            }
+        });
+        return meta;
+    }, [projectGroups]);
 
     const handleAssign = async (requestId: string, memberEmail: string | null) => {
         // Optimistic UI update
@@ -637,8 +688,13 @@ export default function ScheduleTab({ rawRequests, setRawRequests }: ScheduleTab
                         <div style={{ fontSize: 10, marginTop: 4, opacity: 0.7 }}>Navigate to a different month or create a new 3D request</div>
                     </div>
                 ) : (
-                    visibleRequests.map((req, idx) => {
-                        const color = PALETTE[idx % PALETTE.length];
+                    orderedRequests.map((req, idx) => {
+                        const grp = reqGroupMeta.get(req.id);
+                        const isGrouped = !!grp && grp.size > 1;
+                        const isFirstOfGroup = !grp || grp.firstId === req.id;
+                        const projectCollapsed = isGrouped && !expandedProjects.has(grp!.key);
+                        // Same project shares one hue; ungrouped rows fall back to row index.
+                        const color = PALETTE[(grp ? grp.groupIndex : idx) % PALETTE.length];
                         const statusColor = STATUS_COLORS[req.status] || STATUS_COLORS['Submitted'];
                         const reqStart = req.start_date || req.timestamp;
                         const isDraggingReq = drag !== null && drag.kind === 'req' && drag.reqId === req.id;
@@ -651,9 +707,84 @@ export default function ScheduleTab({ rawRequests, setRawRequests }: ScheduleTab
                         const validAreas = getValidAreas(req);
                         const hasAreas = validAreas.length > 0;
                         const isExpanded = expandedIds.has(req.id);
+                        // The label repeats the project name only for standalone rows; inside a
+                        // group the header already shows it, so member rows lead with the booking.
+                        const rowLabel = isGrouped
+                            ? (req.request_name || req.project_name || 'Booking')
+                            : `${req.project_number ? `${req.project_number} - ` : ''}${req.project_name || 'Untitled'}`;
+
+                        // Collapsed group summary bar (min start → max deadline across the group)
+                        const groupBarStyle = grp && grp.minStart && grp.maxEnd ? getBarStyle(grp.minStart, grp.maxEnd) : null;
 
                         return (
                             <React.Fragment key={req.id}>
+                                {/* ── Project Group Header (multi-booking projects only) ── */}
+                                {isFirstOfGroup && isGrouped && (
+                                    <div style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: `200px repeat(${daysInMonth}, 1fr)`,
+                                        minHeight: 46,
+                                        borderBottom: projectCollapsed ? '1px solid var(--bdr, #2E2E2E)' : '1px solid #ffffff10',
+                                        position: 'relative',
+                                    }}>
+                                        <div style={{
+                                            padding: '6px 10px', borderRight: '1px solid var(--bdr, #2E2E2E)',
+                                            display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 3,
+                                            background: 'var(--card, #252526)', position: 'sticky', left: 0, zIndex: 10, cursor: 'pointer',
+                                            borderLeft: `3px solid ${color.border}`,
+                                        }}
+                                            onClick={() => toggleProject(grp!.key)}
+                                            title={projectCollapsed ? 'Expand bookings' : 'Collapse bookings'}
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--tx3, #888)', flexShrink: 0 }}>
+                                                    {projectCollapsed ? <ChevronRightIcon size={13} /> : <ChevronDown size={13} />}
+                                                </span>
+                                                <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--tx, #E8E8E8)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {grp!.projectNumber ? `${grp!.projectNumber} - ` : ''}{grp!.projectName || 'Untitled'}
+                                                </span>
+                                            </div>
+                                            <div style={{ paddingLeft: 17 }}>
+                                                <span style={{ fontSize: 8, padding: '1px 6px', borderRadius: 3, background: color.bg, border: `1px solid ${color.border}40`, color: color.border, fontWeight: 700 }}>
+                                                    {grp!.size} bookings
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {renderDayCells()}
+
+                                        {/* Combined span bar — click to expand/collapse */}
+                                        {groupBarStyle && (
+                                            <div data-gantt-grid style={{
+                                                position: 'absolute', top: 0, left: 200, right: 0, bottom: 0,
+                                                display: 'grid', gridTemplateColumns: `repeat(${daysInMonth}, 1fr)`,
+                                                alignItems: 'center', pointerEvents: 'none',
+                                            }}>
+                                                <div
+                                                    onClick={() => toggleProject(grp!.key)}
+                                                    style={{
+                                                        gridColumnStart: groupBarStyle.gridColumnStart,
+                                                        gridColumnEnd: groupBarStyle.gridColumnEnd,
+                                                        height: 22, borderRadius: 6,
+                                                        background: `repeating-linear-gradient(135deg, ${color.bg}, ${color.bg} 8px, transparent 8px, transparent 14px)`,
+                                                        border: `1.5px dashed ${color.border}70`,
+                                                        display: 'flex', alignItems: 'center', paddingLeft: 8, margin: '0 2px',
+                                                        overflow: 'hidden', pointerEvents: 'auto', cursor: 'pointer',
+                                                    }}
+                                                    title="Project span — click to expand its bookings"
+                                                >
+                                                    <span style={{ fontSize: 8.5, fontWeight: 600, color: color.border, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                        {grp!.size} bookings · click to {projectCollapsed ? 'expand' : 'collapse'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* ── Main Project / Booking Row (hidden while its group is collapsed) ── */}
+                                {!projectCollapsed && (
+                                <React.Fragment>
                                 {/* ── Main Project Row ── */}
                                 <div style={{
                                     display: 'grid',
@@ -669,6 +800,9 @@ export default function ScheduleTab({ rawRequests, setRawRequests }: ScheduleTab
                                         display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 3,
                                         background: 'var(--card, #252526)', position: 'sticky', left: 0, zIndex: 10,
                                         cursor: hasAreas ? 'pointer' : 'default',
+                                        // Indent + accent stripe so grouped bookings read as children of the header
+                                        paddingLeft: isGrouped ? 18 : 10,
+                                        borderLeft: isGrouped ? `3px solid ${color.border}55` : undefined,
                                     }}
                                         onClick={() => { if (hasAreas) toggleExpand(req.id); }}
                                     >
@@ -680,7 +814,7 @@ export default function ScheduleTab({ rawRequests, setRawRequests }: ScheduleTab
                                                 </span>
                                             )}
                                             <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--tx, #E8E8E8)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                {req.project_number ? `${req.project_number} - ` : ''}{req.project_name || 'Untitled'}
+                                                {rowLabel}
                                             </span>
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', paddingLeft: hasAreas ? 16 : 0 }}>
@@ -994,6 +1128,8 @@ export default function ScheduleTab({ rawRequests, setRawRequests }: ScheduleTab
                                         </div>
                                     );
                                 })}
+                                </React.Fragment>
+                                )}
                             </React.Fragment>
                         );
                     })

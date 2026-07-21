@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
-import { get as idbGet, set as idbSet } from 'idb-keyval';
+import { get as idbGet, update as idbUpdate } from 'idb-keyval';
 import { TOOLS, VizProject, VizLog, PhaseKey, freshLog as makeFreshLog, MaterialAnnotation, DD_PHASE_MATERIAL_SCHEDULE, MATERIAL_BOARD_CATEGORIES, FURNITURE_CATEGORIES, FULL_CATEGORY_CATALOG } from './constants';
 import AnnotatedRender from '../DDMaterialTagger/AnnotatedRender';
 
@@ -286,21 +286,23 @@ export default function PromptGenWorkspace({ proj, logs, saveL, freshLog: makeFr
         return () => { alive = false; };
     }, [importsKey]);
 
+    // Read-modify-write in one IndexedDB transaction so a concurrent write from
+    // the Boards studio (which shares this same key) can't clobber ours.
     const addImportedBoard = (title: string, src: string) => {
-        setImportedBoards(prev => {
-            const entry: ImportedBoard = { id: Math.random().toString(36).substring(2, 11), title, src, addedAt: Date.now() };
-            const next = [entry, ...prev].slice(0, 12);
-            void idbSet(importsKey, next).catch((e) => console.warn('[imports] save failed:', e));
+        const entry: ImportedBoard = { id: Math.random().toString(36).substring(2, 11), title, src, addedAt: Date.now() };
+        void idbUpdate<ImportedBoard[]>(importsKey, (list) => {
+            const next = [entry, ...(Array.isArray(list) ? list : [])].slice(0, 12);
+            setImportedBoards(next);
             return next;
-        });
+        }).catch((e) => console.warn('[imports] save failed:', e));
     };
 
     const removeImportedBoard = (id: string) => {
-        setImportedBoards(prev => {
-            const next = prev.filter(b => b.id !== id);
-            void idbSet(importsKey, next).catch(() => {});
+        void idbUpdate<ImportedBoard[]>(importsKey, (list) => {
+            const next = (Array.isArray(list) ? list : []).filter(b => b.id !== id);
+            setImportedBoards(next);
             return next;
-        });
+        }).catch(() => {});
     };
 
     // Import an external board (e.g. a Pinterest pin or image URL) into the canvas editor.

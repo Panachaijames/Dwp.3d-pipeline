@@ -112,7 +112,12 @@
       "PowerShell(\"done\")",
       "Bash(curl -s -X POST http://localhost:3000/api/calendar/create-event -H \"Content-Type: application/json\" -d '{\"projectName\":\"Test\",\"deadline\":\"2026-07-20\"}')",
       "Bash(curl -s -X POST http://localhost:3000/api/calendar/update-event -H \"Content-Type: application/json\" -H \"Authorization: Bearer bogus-token-123\" -d '{\"projectName\":\"Test\",\"projectNumber\":\"26-0000\",\"requestName\":\"Wiring Check\",\"startDate\":\"2026-07-14\",\"deadline\":\"2026-07-20\",\"requestId\":\"TEST123\"}')",
-      "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -First 10; \"exit: $LASTEXITCODE\")"
+      "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -First 10; \"exit: $LASTEXITCODE\")",
+      "Bash(npx next *)",
+      "Bash(node \"C:\\\\Users\\\\DWP2\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-DWP2-Desktop-James-s-Project-BackUp-James-3DPipeline\\\\06eb593c-d69b-41d0-a065-3614525b2614\\\\scratchpad\\\\cmp.js\" \"C:/Users/DWP2/Desktop/James's Project/BackUp James/3DPipeline\")",
+      "PowerShell(Resolve-DnsName oauth2.googleapis.com -ErrorAction SilentlyContinue)",
+      "PowerShell(Resolve-DnsName google.com -ErrorAction SilentlyContinue)",
+      "PowerShell(Test-NetConnection oauth2.googleapis.com -Port 443 -WarningAction SilentlyContinue)"
     ]
   }
 }
